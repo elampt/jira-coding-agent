@@ -1,0 +1,26 @@
+llm:
+  provider: "groq"
+  model: "llama-3.3-70b-versatile"
+
+embeddings:
+  provider: "local"
+  model: "all-MiniLM-L6-v2"
+
+vector_store:
+  provider: "faiss"
+  index_path: "./data/codebase.index"
+
+target_repo:
+  url: "https://github.com/Nirachan8/codingAgentUI"
+  branch_prefix: "agent/"
+  test_command: "npm test"
+  lint_command: "npm run lint"
+  dev_server_command: "npm run dev"
+  dev_server_url: "http://localhost:3000"
+
+jira:
+  project_key: "KAN"
+  auto_approve_risk_levels: ["low"]
+
+playwright:
+  screenshot_dir: "./screenshots"

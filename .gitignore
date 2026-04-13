@@ -1,0 +1,23 @@
+# Environment & secrets
+.env
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Data (FAISS index, cloned repos, screenshots)
+data/
+workspace/
+screenshots/
+
+# OS
+.DS_Store
+
+# Learning journal (personal study notes)
+LEARNING_JOURNAL.md
