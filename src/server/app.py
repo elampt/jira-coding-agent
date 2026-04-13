@@ -33,14 +33,19 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
         # Step 1: Clone the target repo
         repo_path = clone_repo(issue_key)
 
-        # Step 2: Index the codebase for RAG (semantic search)
+        # Step 2: Install dependencies (needed for tests)
+        import subprocess
+        logger.info("Installing npm dependencies...")
+        subprocess.run(["npm", "install"], cwd=str(repo_path), capture_output=True, timeout=120)
+
+        # Step 3: Index the codebase for RAG (semantic search)
         index_repo(repo_path)
 
-        # Step 3: Create a branch
+        # Step 4: Create a branch
         branch_name = create_branch(repo_path, issue_key)
 
-        # Step 4: Run the LangGraph agent — this is where AI happens
-        # The agent: parses the ticket → finds relevant files → plans edits → applies them
+        # Step 5: Run the LangGraph agent
+        # Agent: parse → search → plan → write → test (with self-heal loop)
         result = agent.invoke({
             "issue_key": issue_key,
             "summary": summary,
@@ -50,20 +55,36 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
         })
 
         changes_made = result.get("changes_made", [])
-        logger.info(f"Agent made {len(changes_made)} changes")
+        test_passed = result.get("test_passed", False)
+        retry_count = result.get("retry_count", 0)
+        logger.info(f"Agent made {len(changes_made)} changes, tests passed: {test_passed}")
 
-        # Step 5: Commit the changes
+        # If tests still fail after all retries, comment on Jira and stop
+        if not test_passed:
+            add_comment(
+                issue_key,
+                f"Agent made changes but tests are still failing after {retry_count} fix attempts. "
+                f"Needs human review.\n\nTest output:\n```\n{result.get('test_output', '')[-500:]}\n```"
+            )
+            logger.warning(f"Tests still failing for {issue_key} — commented on Jira")
+            return
+
+        # Step 6: Commit the changes
         commit_changes(repo_path, issue_key, summary)
 
-        # Step 6: Push the branch
+        # Step 7: Push the branch
         push_branch(repo_path, branch_name)
 
-        # Step 7: Create a PR with details of what the agent did
+        # Step 8: Create a PR with details of what the agent did
         changes_list = "\n".join(f"- {c}" for c in changes_made) if changes_made else "No changes made"
+        test_info = "All tests passing" if test_passed else "Tests failing — needs review"
+        if retry_count > 0:
+            test_info += f" (fixed after {retry_count} retry attempts)"
         pr_body = (
             f"## {issue_key}: {summary}\n\n"
             f"**Description:** {description or 'No description provided.'}\n\n"
             f"### Changes Made\n{changes_list}\n\n"
+            f"### Test Results\n{test_info}\n\n"
             f"---\n"
             f"*Automated by Jira Coding Agent*"
         )
@@ -73,7 +94,7 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
             body=pr_body,
         )
 
-        # Step 8: Comment the PR link on Jira
+        # Step 9: Comment the PR link on Jira
         add_comment(issue_key, f"PR created: {pr_url}")
         logger.info(f"Pipeline complete for {issue_key}: {pr_url}")
 
