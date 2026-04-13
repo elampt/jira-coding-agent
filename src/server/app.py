@@ -12,6 +12,7 @@ from src.server.models import JiraWebhookPayload
 from src.integrations.git_ops import clone_repo, create_branch, commit_changes, push_branch
 from src.integrations.github_client import create_pull_request
 from src.integrations.jira_client import add_comment
+from src.agent.graph import agent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,38 +23,43 @@ app = FastAPI(title="Jira Coding Agent")
 def process_new_ticket(issue_key: str, summary: str, description: str | None):
     """Handle a new Jira ticket. Runs in the background.
 
-    Phase 1 pipeline:
-      Clone → branch → (later: agent changes code) → commit → push → PR → Jira comment
-
-    Phase 2+: The LangGraph agent will slot in between branch and commit,
-    making actual code changes based on the ticket.
+    Full pipeline:
+      Clone → branch → LangGraph agent (parse→search→plan→write) → commit → push → PR → Jira comment
     """
     try:
         logger.info(f"Processing ticket {issue_key}: {summary}")
 
-        # Step 1: Clone the target repo into workspace/<issue_key>/
+        # Step 1: Clone the target repo
         repo_path = clone_repo(issue_key)
 
-        # Step 2: Create a branch named agent/<issue_key>
+        # Step 2: Create a branch
         branch_name = create_branch(repo_path, issue_key)
 
-        # Step 3: (Phase 2+) LangGraph agent makes code changes here
-        # For now, we make a placeholder change so the PR isn't empty
-        readme = repo_path / "README.md"
-        content = readme.read_text() if readme.exists() else ""
-        content += f"\n\n<!-- Agent processing {issue_key}: {summary} -->\n"
-        readme.write_text(content)
+        # Step 3: Run the LangGraph agent — this is where AI happens
+        # The agent: parses the ticket → finds relevant files → plans edits → applies them
+        result = agent.invoke({
+            "issue_key": issue_key,
+            "summary": summary,
+            "description": description or "",
+            "repo_path": str(repo_path),
+            "branch_name": branch_name,
+        })
+
+        changes_made = result.get("changes_made", [])
+        logger.info(f"Agent made {len(changes_made)} changes")
 
         # Step 4: Commit the changes
         commit_changes(repo_path, issue_key, summary)
 
-        # Step 5: Push the branch to GitHub
+        # Step 5: Push the branch
         push_branch(repo_path, branch_name)
 
-        # Step 6: Create a Pull Request
+        # Step 6: Create a PR with details of what the agent did
+        changes_list = "\n".join(f"- {c}" for c in changes_made) if changes_made else "No changes made"
         pr_body = (
             f"## {issue_key}: {summary}\n\n"
             f"**Description:** {description or 'No description provided.'}\n\n"
+            f"### Changes Made\n{changes_list}\n\n"
             f"---\n"
             f"*Automated by Jira Coding Agent*"
         )
@@ -63,12 +69,11 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
             body=pr_body,
         )
 
-        # Step 7: Comment the PR link on the Jira ticket
+        # Step 7: Comment the PR link on Jira
         add_comment(issue_key, f"PR created: {pr_url}")
         logger.info(f"Pipeline complete for {issue_key}: {pr_url}")
 
     except Exception as e:
-        # If anything fails, comment the error on Jira so the human knows
         logger.error(f"Pipeline failed for {issue_key}: {e}")
         try:
             add_comment(issue_key, f"Agent failed: {str(e)}")
