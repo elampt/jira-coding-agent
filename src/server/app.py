@@ -12,6 +12,7 @@ from src.server.models import JiraWebhookPayload
 from src.integrations.git_ops import clone_repo, create_branch, commit_changes, push_branch
 from src.integrations.github_client import create_pull_request
 from src.integrations.jira_client import add_comment
+from src.rag.indexer import index_repo
 from src.agent.graph import agent
 
 logging.basicConfig(level=logging.INFO)
@@ -32,10 +33,13 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
         # Step 1: Clone the target repo
         repo_path = clone_repo(issue_key)
 
-        # Step 2: Create a branch
+        # Step 2: Index the codebase for RAG (semantic search)
+        index_repo(repo_path)
+
+        # Step 3: Create a branch
         branch_name = create_branch(repo_path, issue_key)
 
-        # Step 3: Run the LangGraph agent — this is where AI happens
+        # Step 4: Run the LangGraph agent — this is where AI happens
         # The agent: parses the ticket → finds relevant files → plans edits → applies them
         result = agent.invoke({
             "issue_key": issue_key,
@@ -48,13 +52,13 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
         changes_made = result.get("changes_made", [])
         logger.info(f"Agent made {len(changes_made)} changes")
 
-        # Step 4: Commit the changes
+        # Step 5: Commit the changes
         commit_changes(repo_path, issue_key, summary)
 
-        # Step 5: Push the branch
+        # Step 6: Push the branch
         push_branch(repo_path, branch_name)
 
-        # Step 6: Create a PR with details of what the agent did
+        # Step 7: Create a PR with details of what the agent did
         changes_list = "\n".join(f"- {c}" for c in changes_made) if changes_made else "No changes made"
         pr_body = (
             f"## {issue_key}: {summary}\n\n"
@@ -69,7 +73,7 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
             body=pr_body,
         )
 
-        # Step 7: Comment the PR link on Jira
+        # Step 8: Comment the PR link on Jira
         add_comment(issue_key, f"PR created: {pr_url}")
         logger.info(f"Pipeline complete for {issue_key}: {pr_url}")
 

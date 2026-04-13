@@ -1,17 +1,23 @@
 """
-SEARCH node — finds relevant files in the codebase using grep.
+SEARCH node — finds relevant files using RAG (semantic) + grep (exact).
 
-Input:  ticket_plan.component_hints + repo_path from state
+Two search strategies combined:
+  1. RAG: embed ticket text → FAISS finds semantically similar files
+         "navigation bar" → finds "header" (different words, same meaning)
+  2. Grep: search for exact strings from component_hints
+         "Learn React" → finds the exact text in App.js
+
+Together they catch both semantic matches AND exact string matches.
+
+Input:  ticket_plan.component_hints + repo_path + summary from state
 Output: relevant_files — list of {path, content} for files that match
-
-Phase 2: Simple grep search.
-Phase 3: Will add RAG (FAISS + embeddings) for semantic search.
 """
 
 import logging
 import subprocess
 from pathlib import Path
 from src.agent.state import AgentState
+from src.rag.retriever import retrieve_similar
 
 logger = logging.getLogger(__name__)
 
@@ -65,35 +71,57 @@ def read_file_content(file_path: str, repo_path: Path) -> dict:
 def search_codebase(state: AgentState) -> dict:
     """SEARCH node — called by LangGraph.
 
-    Reads: ticket_plan.component_hints, repo_path from state
+    Reads: ticket_plan.component_hints, repo_path, summary from state
     Writes: relevant_files to state
 
-    Greps for each component hint, collects all matching files,
-    reads their full content, and deduplicates.
+    Combines two strategies:
+      1. RAG — semantic search using ticket summary
+      2. Grep — exact string match using component hints
+    Deduplicates by file path so each file appears once.
     """
     hints = state["ticket_plan"]["component_hints"]
     repo_path = Path(state["repo_path"])
+    summary = state["summary"]
 
     logger.info(f"Searching codebase for hints: {hints}")
 
-    # Grep for each hint, collect all matching file paths
+    # --- Strategy 1: RAG (semantic search) ---
+    logger.info("  RAG search...")
+    rag_results = retrieve_similar(query=summary, top_k=5)
+
+    # --- Strategy 2: Grep (exact match) ---
+    logger.info("  Grep search...")
     all_matching_files = set()
     for hint in hints:
         matches = grep_codebase(repo_path, hint)
         all_matching_files.update(matches)
-        logger.info(f"  '{hint}' → {len(matches)} files")
+        logger.info(f"    '{hint}' → {len(matches)} files")
 
-    # Read content of each matching file
-    relevant_files = []
-    seen_paths = set()  # deduplicate — a file might match multiple hints
+    grep_results = []
     for file_path in all_matching_files:
-        if file_path not in seen_paths:
-            seen_paths.add(file_path)
-            file_context = read_file_content(file_path, repo_path)
-            relevant_files.append(file_context)
-            logger.info(f"  Found: {file_context['path']}")
+        grep_results.append(read_file_content(file_path, repo_path))
+
+    # --- Combine and deduplicate ---
+    relevant_files = []
+    seen_paths = set()
+
+    # Add RAG results first (semantic matches)
+    for f in rag_results:
+        if f["path"] not in seen_paths:
+            seen_paths.add(f["path"])
+            relevant_files.append(f)
+            logger.info(f"  [RAG] {f['path']}")
+
+    # Add grep results (exact matches, skip duplicates)
+    for f in grep_results:
+        if f["path"] not in seen_paths:
+            seen_paths.add(f["path"])
+            relevant_files.append(f)
+            logger.info(f"  [GREP] {f['path']}")
 
     if not relevant_files:
         logger.warning("No relevant files found!")
+    else:
+        logger.info(f"  Total: {len(relevant_files)} unique files")
 
     return {"relevant_files": relevant_files}
