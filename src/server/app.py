@@ -9,11 +9,15 @@ Endpoints:
 import logging
 from fastapi import FastAPI, BackgroundTasks
 from src.server.models import JiraWebhookPayload
+from pathlib import Path
+
 from src.integrations.git_ops import clone_repo, create_branch, commit_changes, push_branch
 from src.integrations.github_client import create_pull_request
 from src.integrations.jira_client import add_comment
 from src.rag.indexer import index_repo
 from src.agent.graph import agent
+from src.agent.nodes.screenshotter import _capture_screenshot
+from src.config import config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,10 +45,15 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
         # Step 3: Index the codebase for RAG (semantic search)
         index_repo(repo_path)
 
-        # Step 4: Create a branch
+        # Step 4: Take "before" screenshot (current UI, before any changes)
+        screenshot_dir = Path(config.playwright.screenshot_dir) / issue_key
+        before_path = screenshot_dir / "before.png"
+        _capture_screenshot(repo_path, before_path, "BEFORE")
+
+        # Step 5: Create a branch
         branch_name = create_branch(repo_path, issue_key)
 
-        # Step 5: Run the LangGraph agent
+        # Step 6: Run the LangGraph agent
         # Agent: parse → search → plan → write → test (with self-heal loop)
         result = agent.invoke({
             "issue_key": issue_key,
@@ -69,32 +78,47 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
             logger.warning(f"Tests still failing for {issue_key} — commented on Jira")
             return
 
-        # Step 6: Commit the changes
+        # Step 7: Take "after" screenshot (UI with agent's changes, tests passing)
+        after_path = screenshot_dir / "after.png"
+        _capture_screenshot(repo_path, after_path, "AFTER")
+
+        # Step 8: Commit the changes
         commit_changes(repo_path, issue_key, summary)
 
-        # Step 7: Push the branch
+        # Step 9: Push the branch
         push_branch(repo_path, branch_name)
 
-        # Step 8: Create a PR with details of what the agent did
+        # Step 10: Create a PR with details of what the agent did
         changes_list = "\n".join(f"- {c}" for c in changes_made) if changes_made else "No changes made"
         test_info = "All tests passing" if test_passed else "Tests failing — needs review"
         if retry_count > 0:
             test_info += f" (fixed after {retry_count} retry attempts)"
+
+        # Note: screenshots are saved locally. To embed them in the PR, we'd need to
+        # upload them to S3 (Phase 7) or as PR comment attachments. For now, we just
+        # mention them in the PR description and the reviewer can find them locally.
+        screenshot_info = ""
+        if before_path.exists():
+            screenshot_info += f"- Before: `{before_path}`\n"
+        if after_path.exists():
+            screenshot_info += f"- After: `{after_path}`\n"
+
         pr_body = (
             f"## {issue_key}: {summary}\n\n"
             f"**Description:** {description or 'No description provided.'}\n\n"
             f"### Changes Made\n{changes_list}\n\n"
             f"### Test Results\n{test_info}\n\n"
-            f"---\n"
-            f"*Automated by Jira Coding Agent*"
         )
+        if screenshot_info:
+            pr_body += f"### Screenshots\n{screenshot_info}\n"
+        pr_body += "---\n*Automated by Jira Coding Agent*"
         pr_url = create_pull_request(
             branch_name=branch_name,
             title=f"{issue_key}: {summary}",
             body=pr_body,
         )
 
-        # Step 9: Comment the PR link on Jira
+        # Step 11: Comment the PR link on Jira
         add_comment(issue_key, f"PR created: {pr_url}")
         logger.info(f"Pipeline complete for {issue_key}: {pr_url}")
 

@@ -64,3 +64,7 @@ class AgentState(TypedDict):
     test_passed: bool              # Did tests pass?
     test_output: str               # stdout/stderr from npm test
     retry_count: int               # How many times we've retried (max 3)
+
+    # SCREENSHOT node outputs
+    screenshot_before: str         # Path to "before" screenshot (empty if failed)
+    screenshot_after: str          # Path to "after" screenshot (empty if failed)

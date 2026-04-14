@@ -21,3 +21,6 @@ screenshots/
 
 # Learning journal (personal study notes)
 LEARNING_JOURNAL.md
+
+# Playwright MCP debug artifacts
+.playwright-mcp/
