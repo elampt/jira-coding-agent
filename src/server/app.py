@@ -29,6 +29,7 @@ from src.rag.indexer import index_repo
 from src.agent.graph import agent
 from src.agent.nodes.screenshotter import _capture_screenshot
 from src.config import config
+from src.observability import langfuse_handler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,6 +40,19 @@ app = FastAPI(title="Jira Coding Agent")
 # Needed because approval may arrive in a later webhook — we need to remember context.
 # For production, this would be a database. MemorySaver in graph.py handles the agent state.
 _session_store: dict[str, dict] = {}
+
+
+def _agent_config(issue_key: str) -> dict:
+    """Build the LangGraph config for a given ticket.
+
+    Includes:
+      - thread_id: lets LangGraph match this run with any previously-paused state
+      - callbacks: LangFuse handler if configured, so all LLM calls are traced
+    """
+    config = {"configurable": {"thread_id": issue_key}}
+    if langfuse_handler is not None:
+        config["callbacks"] = [langfuse_handler]
+    return config
 
 
 def _finalize(issue_key: str, result: dict) -> None:
@@ -155,7 +169,8 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
         }
 
         # Run the agent — use issue_key as thread_id so we can resume later
-        graph_config = {"configurable": {"thread_id": issue_key}}
+        # graph_config also includes the LangFuse callback if configured
+        graph_config = _agent_config(issue_key)
         result = agent.invoke(
             {
                 "issue_key": issue_key,
@@ -224,7 +239,7 @@ def process_comment(issue_key: str, comment_body: str):
     logger.info(f"Resuming agent for {issue_key} with: {human_response}")
 
     try:
-        graph_config = {"configurable": {"thread_id": issue_key}}
+        graph_config = _agent_config(issue_key)
         result = agent.invoke(Command(resume=human_response), config=graph_config)
         _finalize(issue_key, result)
 

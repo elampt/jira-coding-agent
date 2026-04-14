@@ -75,6 +75,11 @@ class EnvSecrets(BaseSettings):
     jira_api_token: str = ""
     github_token: str = ""
 
+    # LangFuse — for LLM observability (free tier)
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "https://cloud.langfuse.com"
+
     model_config = {"env_file": ".env"}
 
 
