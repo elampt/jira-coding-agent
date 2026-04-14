@@ -68,3 +68,6 @@ class AgentState(TypedDict):
     # SCREENSHOT node outputs
     screenshot_before: str         # Path to "before" screenshot (empty if failed)
     screenshot_after: str          # Path to "after" screenshot (empty if failed)
+
+    # Human-in-the-loop
+    approval_status: str           # "pending" / "approved" / "rejected"
