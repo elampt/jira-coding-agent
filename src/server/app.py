@@ -201,18 +201,24 @@ def process_comment(issue_key: str, comment_body: str):
         logger.info(f"No paused session for {issue_key} — ignoring comment")
         return
 
-    # Detect intent from the comment — normalize by lowercasing and removing
-    # Jira mentions (e.g. "[~accountid:...] approve" → "approve")
+    # Skip agent's own comments — they all start with "🤖"
+    # Without this, the agent's own "Reply with `approve`" message would trigger a resume
+    if comment_body.lstrip().startswith("🤖"):
+        logger.info(f"Skipping agent's own comment")
+        return
+
+    # Detect intent — be strict to avoid false positives.
+    # The cleaned comment must be EXACTLY "approve"/"reject" (with optional whitespace),
+    # ignoring any Jira account-mention prefix like "[~accountid:...]".
     import re
     cleaned = re.sub(r"\[~accountid:[^\]]+\]", "", comment_body).strip().lower()
-    # Check if any word in the comment is "approve" or "reject"
-    words = re.findall(r"\b\w+\b", cleaned)
-    if "approve" in words or "approved" in words:
+
+    if cleaned in ("approve", "approved"):
         human_response = "approved"
-    elif "reject" in words or "rejected" in words:
+    elif cleaned in ("reject", "rejected"):
         human_response = "rejected"
     else:
-        logger.info(f"Comment is not an approval/rejection — ignoring")
+        logger.info(f"Comment is not a clear approval/rejection — ignoring")
         return
 
     logger.info(f"Resuming agent for {issue_key} with: {human_response}")
