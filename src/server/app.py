@@ -102,7 +102,12 @@ def _finalize(issue_key: str, result: dict) -> None:
     push_branch(repo_path, branch_name)
 
     # Build PR description with embedded images
-    # GitHub renders ![alt](path) as inline images when the file exists in the branch
+    # GitHub PR descriptions don't render relative paths — need full raw URLs
+    # Format: https://github.com/{owner}/{repo}/raw/{branch}/agent-screenshots/before.png
+    from src.integrations.github_client import _get_repo_full_name
+    repo_full_name = _get_repo_full_name()
+    raw_base = f"https://github.com/{repo_full_name}/raw/{branch_name}/agent-screenshots"
+
     changes_list = "\n".join(f"- {c}" for c in changes_made) if changes_made else "No changes made"
     test_info = "All tests passing"
     if retry_count > 0:
@@ -110,9 +115,9 @@ def _finalize(issue_key: str, result: dict) -> None:
 
     screenshot_info = ""
     if before_path.exists():
-        screenshot_info += "**Before:**\n\n![Before](agent-screenshots/before.png)\n\n"
+        screenshot_info += f"**Before:**\n\n![Before]({raw_base}/before.png)\n\n"
     if after_path.exists():
-        screenshot_info += "**After:**\n\n![After](agent-screenshots/after.png)\n\n"
+        screenshot_info += f"**After:**\n\n![After]({raw_base}/after.png)\n\n"
 
     pr_body = (
         f"## {issue_key}: {summary}\n\n"
