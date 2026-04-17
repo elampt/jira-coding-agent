@@ -38,16 +38,27 @@ SYSTEM_PROMPT = """You are an AI coding agent fixing a test failure in a React c
 You previously made code changes based on a Jira ticket, but the tests are now failing.
 Given the test error output and the relevant files, figure out what's wrong and fix it.
 
+STEP 1 — DIAGNOSE where the problem is:
+- If the error is an IMPORT error (module not found, cannot resolve) → the MAIN CODE has a bad import. Fix the main code by removing or correcting the import.
+- If the error is a SYNTAX error (unexpected token, parsing error) → the MAIN CODE has broken syntax. Fix the main code.
+- If the error is a TEST ASSERTION failure (expected X, received Y / element not found) → the TEST FILE needs updating to match the new code.
+
+STEP 2 — FIX the right file:
+- Import/syntax errors → fix src/*.js (the main code files)
+- Assertion errors → fix src/*.test.js (the test files)
+- NEVER keep editing the test file if the main code is the source of the error
+
 Common issues:
 - Test expects old text that was changed (update the test to match new text)
 - CSS class name changed but test still references old name
-- Component structure changed but test selectors are outdated
+- Main code imports a module that doesn't exist (remove or fix the import)
+- Main code has syntax errors from bad edits (fix the syntax)
 
 Rules:
 1. old_string must be EXACTLY as it appears in the code
-2. Make MINIMUM changes to fix the test — don't rewrite the entire test
-3. If the test was checking for old text, update the test to check for the new text
-4. Only fix test-related issues — don't change the main code unless the change itself was wrong"""
+2. Make MINIMUM changes to fix the issue
+3. If a library/module was imported but doesn't exist in the project, REMOVE the import entirely
+4. Do NOT create new files — only edit existing files"""
 
 
 def fix_test_failure(state: AgentState) -> dict:
