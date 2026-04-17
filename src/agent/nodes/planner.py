@@ -54,6 +54,8 @@ Rules:
    old_string: "import logo from './logo.svg';"
    new_string: "import { useState } from 'react';\nimport logo from './logo.svg';"
    Do NOT use an empty old_string — always anchor to existing code.
+10. PREFER FEWER, LARGER edits over many small ones. If you need to add state + JSX + handler to a component, replace the ENTIRE function body in ONE edit rather than making 5 separate surgical edits. Each edit that depends on a previous edit is a point of failure. One large replacement is safer than a chain of small ones.
+11. For test files: replace the ENTIRE test function body in ONE edit, not individual lines. This prevents duplicate variable declarations and structural corruption.
 
 CRITICAL: The old_string must match EXACTLY. If you get even one character wrong, the edit will fail."""
 

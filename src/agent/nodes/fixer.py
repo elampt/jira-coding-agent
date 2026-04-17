@@ -75,31 +75,25 @@ def fix_test_failure(state: AgentState) -> dict:
 
     logger.info(f"Fixing test failure (attempt {retry_count + 1}/3)")
 
-    # Read the test file and any files we previously changed
+    # Read ALL relevant source files DIRECTLY FROM DISK — not from state.
+    # This is critical: after fix attempt 1 modifies files, attempt 2 needs
+    # to see the CURRENT state of files, not the original state.
     file_contents = ""
-
-    # Always include the test file
-    test_files = list((repo_path / "src").glob("*.test.*"))
-    for tf in test_files:
-        relative = str(tf.relative_to(repo_path))
-        content = tf.read_text()
-        file_contents += f"\n--- {relative} ---\n{content}\n"
-
-    # Include files we changed (they might need fixing too)
-    for change in changes_made:
-        # change looks like: "src/App.js: replaced 'X' with 'Y'"
-        file_path_str = change.split(":")[0].strip()
-        full_path = repo_path / file_path_str
-        if full_path.exists():
-            content = full_path.read_text()
-            file_contents += f"\n--- {file_path_str} ---\n{content}\n"
+    seen = set()
+    for pattern in ["*.js", "*.jsx", "*.ts", "*.tsx"]:
+        for f in (repo_path / "src").glob(pattern):
+            relative = str(f.relative_to(repo_path))
+            if relative not in seen:
+                seen.add(relative)
+                content = f.read_text()
+                file_contents += f"\n--- {relative} ---\n{content}\n"
 
     user_message = (
         f"## Test Failure Output\n```\n{test_output}\n```\n\n"
         f"## Previous Changes Made\n{chr(10).join(f'- {c}' for c in changes_made)}\n\n"
-        f"## Relevant Files\n{file_contents}\n\n"
-        f"Fix the test failure. The main code change was correct — "
-        f"most likely the test file needs to be updated to match the new code."
+        f"## Current Source Files (read from disk)\n{file_contents}\n\n"
+        f"Fix the test failure. Diagnose whether the problem is in the main "
+        f"code or the test file, then fix the right file."
     )
 
     llm = ChatGroq(
