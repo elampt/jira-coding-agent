@@ -47,6 +47,7 @@ Rules:
 4. Only edit files that were provided to you. Do not create new files
 5. If the ticket asks to change text, only change that text — don't restructure the component
 6. If the ticket asks to change a color/style, only change that specific CSS property
+7. IMPORTANT: If your changes modify text, class names, component props, or any value that is referenced in test files (*.test.js), include edits to update those test files in the SAME plan. Tests should pass after your edits without needing a separate fix.
 
 CRITICAL: The old_string must match EXACTLY. If you get even one character wrong, the edit will fail."""
 
