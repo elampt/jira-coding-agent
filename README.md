@@ -2,6 +2,25 @@
 
 An AI agent that watches Jira for new tickets, autonomously modifies a React frontend codebase, runs tests with self-healing, takes visual before/after screenshots via Playwright MCP, and creates pull requests — with human-in-the-loop approval for high-risk changes and full LangFuse observability.
 
+> **Demo video:** [Coming soon]
+
+## In Action
+
+### PR with Before/After Screenshots
+The agent creates a PR with inline visual verification — reviewers see exactly what changed in the UI.
+
+![PR with before/after screenshots](assets/pr-with-screenshots.png)
+
+### Human-in-the-Loop Approval on Jira
+High-risk changes pause and post an LLM-generated plan with risk concerns. The human approves or rejects directly on Jira.
+
+![Jira approval comment](assets/jira-approval-comment.png)
+
+### Full LLM Observability via LangFuse
+Every LLM call is traced — prompts, responses, latencies, token counts. The agent flow is visible as a graph.
+
+![LangFuse trace](assets/langfuse-trace.png)
+
 ## Architecture
 
 ```mermaid
@@ -238,28 +257,68 @@ target_repo:
   dev_server_url: "http://localhost:3000"
 ```
 
-### Running
+### Running the Server
 
 ```bash
-# Start the server
+# Terminal 1 — start the FastAPI server
 uvicorn src.server.app:app --port 8000
+```
 
-# In another terminal — expose to the internet for Jira webhooks
+### Setting Up ngrok (Webhook Tunnel)
+
+Jira Cloud needs to send webhooks to your server, but your `localhost:8000` isn't accessible from the internet. **ngrok** creates a public URL that tunnels requests to your local machine.
+
+```bash
+# Install ngrok (macOS)
+brew install ngrok
+
+# Sign up at https://ngrok.com (free) and add your auth token
+ngrok config add-authtoken YOUR_TOKEN
+
+# Terminal 2 — start the tunnel
 ngrok http 8000
-
-# Configure Jira webhook:
-# URL: https://your-ngrok-url.ngrok.io/webhook
-# Events: issue_created, comment_created
 ```
 
-### Testing
+ngrok will display a public URL like `https://abc123.ngrok-free.dev`. This is your webhook URL.
 
-Create a Jira ticket and watch it work:
+> **Note:** The free tier generates a random URL each time you restart ngrok. For production, deploy to AWS EC2 with a static public IP — no ngrok needed.
 
+### Configuring Jira Webhook
+
+1. Go to your Jira site: `https://your-site.atlassian.net/plugins/servlet/webhooks`
+2. Click **Create a Webhook**
+3. Fill in:
+   - **Name:** `Jira Coding Agent`
+   - **URL:** `https://your-ngrok-url.ngrok-free.dev/webhook`
+   - **Events:** Check `Issue: created` and `Comment: created`
+4. Click **Create**
+
+Now when you create a Jira ticket, Jira sends an HTTP POST to your ngrok URL, which tunnels it to your FastAPI server on `localhost:8000`.
+
+### Verify Everything Works
+
+```bash
+# Check server health
+curl http://localhost:8000/health
+# Should return: {"status": "ok"}
+
+# Watch agent logs in real-time
+tail -f /tmp/server.log
 ```
-Summary: "Change the link text from Learn React to Hello World"
-Description: "Update the main link text in the React app"
-```
+
+### Create a Test Ticket
+
+Create a Jira ticket and watch the agent work:
+
+| Field | Value |
+|-------|-------|
+| **Summary** | `Change the link text from Learn React to Hello World` |
+| **Description** | `Update the main link text in the React app` |
+
+Within 2-3 minutes:
+- A PR appears on GitHub with before/after screenshots
+- A comment on the Jira ticket with the PR link
+- A trace in LangFuse showing the full agent execution
 
 ## Key Design Decisions
 
