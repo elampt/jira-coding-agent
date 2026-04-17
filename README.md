@@ -2,7 +2,7 @@
 
 An AI agent that watches Jira for new tickets, autonomously modifies a React frontend codebase, runs tests with self-healing, takes visual before/after screenshots via Playwright MCP, and creates pull requests — with human-in-the-loop approval for high-risk changes and full LangFuse observability.
 
-> **Demo video:** [Coming soon]
+> **Demo video:** [Watch the full demo on Loom](https://www.loom.com/share/96e206ad8dea4aee9d2c5ea69d9fe5c3)
 
 ## In Action
 
