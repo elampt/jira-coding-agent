@@ -40,18 +40,21 @@ def apply_changes(state: AgentState) -> dict:
         # Read current content
         content = file_path.read_text()
 
-        # Check old_string exists in the file
-        if edit["old_string"] not in content:
+        # Handle empty old_string — means "prepend to file" (e.g., adding new imports)
+        if not edit["old_string"].strip():
+            new_content = edit["new_string"] + "\n" + content
+            logger.info(f"  Prepended new content to {edit['file']}")
+        elif edit["old_string"] not in content:
             logger.warning(
                 f"old_string not found in {edit['file']}: '{edit['old_string'][:50]}...' — skipping edit"
             )
             changes_made.append(f"SKIPPED: '{edit['old_string'][:30]}...' not found in {edit['file']}")
             continue
-
-        # Apply the replacement
-        new_content = content.replace(edit["old_string"], edit["new_string"], 1)
-        # replace(..., 1) = replace only the FIRST occurrence
-        # This prevents accidentally changing other identical strings in the file
+        else:
+            # Apply the replacement
+            new_content = content.replace(edit["old_string"], edit["new_string"], 1)
+            # replace(..., 1) = replace only the FIRST occurrence
+            # This prevents accidentally changing other identical strings in the file
 
         file_path.write_text(new_content)
 

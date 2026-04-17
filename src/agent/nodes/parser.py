@@ -28,7 +28,7 @@ class TicketPlanOutput(BaseModel):
         "component names, text strings mentioned, CSS properties, file names"
     )
     risk_level: str = Field(
-        description="low = text/CSS only, medium = component logic, high = multiple files or routing"
+        description="low = text/CSS only, medium = simple prop changes, high = adding state (useState), new functions, routing, multiple file changes, or refactoring"
     )
 
 
@@ -39,7 +39,7 @@ SYSTEM_PROMPT = """You are a ticket parser for an AI coding agent that modifies 
 Given a Jira ticket (summary + description), extract:
 1. intent — what needs to change, in 5-10 words
 2. component_hints — keywords to grep for in the codebase (component names, exact text strings, CSS class names, file names)
-3. risk_level — "low" if only text/CSS changes, "medium" if component props/state change, "high" if multiple components or routing
+3. risk_level — "low" if only text/CSS changes, "medium" if simple prop changes, "high" if adding state (useState/useEffect), new functions/handlers, routing, multiple file changes, or any refactoring
 
 Be specific with component_hints. If the ticket says "change the header text from 'Learn React' to 'My App'",
 the hints should include: ["header", "Learn React", "App.js"] — exact strings that would appear in the code.
