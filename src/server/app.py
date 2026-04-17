@@ -28,7 +28,6 @@ from src.integrations.jira_client import add_comment
 from src.rag.indexer import index_repo
 from src.agent.graph import agent
 from src.agent.nodes.screenshotter import _capture_screenshot
-from src.config import config
 from src.observability import langfuse_handler
 
 logging.basicConfig(level=logging.INFO)
@@ -94,20 +93,9 @@ def _finalize(issue_key: str, result: dict) -> None:
         _session_store.pop(issue_key, None)
         return
 
-    # Take "after" screenshot
-    screenshot_dir = Path(config.playwright.screenshot_dir) / issue_key
-    after_path = screenshot_dir / "after.png"
+    # Take "after" screenshot — saved directly in the repo (same folder as "before")
+    after_path = repo_path / "agent-screenshots" / "after.png"
     _capture_screenshot(repo_path, after_path, "AFTER")
-
-    # Copy screenshots INTO the repo so they're included in the PR branch.
-    # GitHub renders images referenced with relative paths in PR descriptions.
-    import shutil
-    screenshots_in_repo = repo_path / "agent-screenshots"
-    screenshots_in_repo.mkdir(exist_ok=True)
-    if before_path.exists():
-        shutil.copy2(before_path, screenshots_in_repo / "before.png")
-    if after_path.exists():
-        shutil.copy2(after_path, screenshots_in_repo / "after.png")
 
     # Commit + push + PR
     commit_changes(repo_path, issue_key, summary)
@@ -164,8 +152,11 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
 
         index_repo(repo_path)
 
-        screenshot_dir = Path(config.playwright.screenshot_dir) / issue_key
-        before_path = screenshot_dir / "before.png"
+        # Take "before" screenshot — saved directly inside the cloned repo
+        # so it gets committed with the PR branch (no separate copy step)
+        screenshots_in_repo = repo_path / "agent-screenshots"
+        screenshots_in_repo.mkdir(exist_ok=True)
+        before_path = screenshots_in_repo / "before.png"
         _capture_screenshot(repo_path, before_path, "BEFORE")
 
         branch_name = create_branch(repo_path, issue_key)
