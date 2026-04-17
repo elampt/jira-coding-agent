@@ -23,6 +23,10 @@ from src.integrations.jira_client import add_comment
 
 logger = logging.getLogger(__name__)
 
+# Tracks which tickets already have their approval comment posted.
+# Prevents duplicate comments when LangGraph re-runs the node on resume.
+_posted_approvals: set[str] = set()
+
 
 class ChangeSummary(BaseModel):
     """LLM-generated summary of the agent's plan, for human review."""
@@ -126,37 +130,53 @@ def _format_jira_comment(
 def wait_for_approval(state: AgentState) -> dict:
     """WAIT FOR APPROVAL node — called by LangGraph for high-risk changes.
 
+    IMPORTANT: LangGraph re-runs this entire function from the top when resuming.
+    Everything above interrupt() runs TWICE — once on initial call, once on resume.
+    We use _posted_approvals (module-level set) to track which tickets already
+    have their approval comment posted, so we don't post duplicates.
+
     Reads: ticket_plan, edit_plan, issue_key, summary, description from state
     Writes: approval_status (after resumed via Command)
     """
     issue_key = state["issue_key"]
-    ticket_plan = state["ticket_plan"]
-    edit_plan = state.get("edit_plan", [])
-    summary = state["summary"]
-    description = state.get("description", "")
 
-    logger.info(f"PAUSING for human approval on {issue_key} (HIGH RISK)")
+    # Only post the approval comment ONCE per ticket.
+    # On resume, this block is skipped because issue_key is already in the set.
+    if issue_key not in _posted_approvals:
+        ticket_plan = state["ticket_plan"]
+        edit_plan = state.get("edit_plan", [])
+        summary = state["summary"]
+        description = state.get("description", "")
 
-    # Generate plain-English summary using LLM
-    logger.info("Generating change summary for human review...")
-    try:
-        summary_obj = _generate_summary(ticket_plan, edit_plan, summary, description)
-        logger.info(f"Summary: {summary_obj.summary}")
-    except Exception as e:
-        # Fallback if LLM call fails — use a basic summary so we don't block the flow
-        logger.warning(f"Summary generation failed: {e}. Using fallback.")
-        summary_obj = ChangeSummary(
-            summary=f"Agent plans to make {len(edit_plan)} edit(s) for: {ticket_plan['intent']}",
-            risk_concerns=["LLM-generated summary unavailable — review the detailed edits below carefully"],
-        )
+        logger.info(f"PAUSING for human approval on {issue_key} (HIGH RISK)")
 
-    # Format and post to Jira
-    comment_text = _format_jira_comment(summary_obj, ticket_plan, edit_plan)
-    add_comment(issue_key, comment_text)
-    logger.info(f"Posted approval request on {issue_key}, waiting for response...")
+        # Generate plain-English summary using LLM
+        logger.info("Generating change summary for human review...")
+        try:
+            summary_obj = _generate_summary(ticket_plan, edit_plan, summary, description)
+            logger.info(f"Summary: {summary_obj.summary}")
+        except Exception as e:
+            logger.warning(f"Summary generation failed: {e}. Using fallback.")
+            summary_obj = ChangeSummary(
+                summary=f"Agent plans to make {len(edit_plan)} edit(s) for: {ticket_plan['intent']}",
+                risk_concerns=["LLM-generated summary unavailable — review the detailed edits below carefully"],
+            )
 
-    # interrupt() pauses the graph; resumes when Command(resume=...) is passed
+        # Format and post to Jira
+        comment_text = _format_jira_comment(summary_obj, ticket_plan, edit_plan)
+        add_comment(issue_key, comment_text)
+        logger.info(f"Posted approval request on {issue_key}, waiting for response...")
+
+        # Mark as posted so we don't post again on resume
+        _posted_approvals.add(issue_key)
+
+    # interrupt() pauses the graph on first call.
+    # On resume, it returns the value from Command(resume=...).
     human_response = interrupt({"action": "wait_for_approval", "issue_key": issue_key})
 
     logger.info(f"Resumed with response: {human_response}")
+
+    # Clean up the tracking set
+    _posted_approvals.discard(issue_key)
+
     return {"approval_status": human_response}
