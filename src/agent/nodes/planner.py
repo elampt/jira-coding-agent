@@ -49,7 +49,8 @@ Rules:
 6. If the ticket asks to change a color/style, only change that specific CSS property
 7. IMPORTANT: If your changes modify text, class names, component props, or any value that is referenced in test files (*.test.js), include edits to update those test files in the SAME plan. Tests should pass after your edits without needing a separate fix.
 
-8. To ADD a new import, use the existing first import line as old_string and include the new import in new_string. Example:
+8. Only import from packages that ALREADY exist in the project. Built-in React hooks (useState, useEffect, etc.) are fine. Do NOT add imports from new npm packages that aren't already in the codebase — they won't be installed and the code will crash.
+9. To ADD a new import, use the existing first import line as old_string and include the new import in new_string. Example:
    old_string: "import logo from './logo.svg';"
    new_string: "import { useState } from 'react';\nimport logo from './logo.svg';"
    Do NOT use an empty old_string — always anchor to existing code.
