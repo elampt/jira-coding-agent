@@ -99,11 +99,22 @@ def _finalize(issue_key: str, result: dict) -> None:
     after_path = screenshot_dir / "after.png"
     _capture_screenshot(repo_path, after_path, "AFTER")
 
+    # Copy screenshots INTO the repo so they're included in the PR branch.
+    # GitHub renders images referenced with relative paths in PR descriptions.
+    import shutil
+    screenshots_in_repo = repo_path / "agent-screenshots"
+    screenshots_in_repo.mkdir(exist_ok=True)
+    if before_path.exists():
+        shutil.copy2(before_path, screenshots_in_repo / "before.png")
+    if after_path.exists():
+        shutil.copy2(after_path, screenshots_in_repo / "after.png")
+
     # Commit + push + PR
     commit_changes(repo_path, issue_key, summary)
     push_branch(repo_path, branch_name)
 
-    # Build PR description
+    # Build PR description with embedded images
+    # GitHub renders ![alt](path) as inline images when the file exists in the branch
     changes_list = "\n".join(f"- {c}" for c in changes_made) if changes_made else "No changes made"
     test_info = "All tests passing"
     if retry_count > 0:
@@ -111,9 +122,9 @@ def _finalize(issue_key: str, result: dict) -> None:
 
     screenshot_info = ""
     if before_path.exists():
-        screenshot_info += f"- Before: `{before_path}`\n"
+        screenshot_info += "**Before:**\n\n![Before](agent-screenshots/before.png)\n\n"
     if after_path.exists():
-        screenshot_info += f"- After: `{after_path}`\n"
+        screenshot_info += "**After:**\n\n![After](agent-screenshots/after.png)\n\n"
 
     pr_body = (
         f"## {issue_key}: {summary}\n\n"
