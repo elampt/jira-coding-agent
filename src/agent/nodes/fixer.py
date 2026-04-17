@@ -58,7 +58,8 @@ Rules:
 1. old_string must be EXACTLY as it appears in the code
 2. Make MINIMUM changes to fix the issue
 3. If a library/module was imported but doesn't exist in the project, REMOVE the import entirely
-4. Do NOT create new files — only edit existing files"""
+4. Do NOT create new files — only edit existing files
+5. IMPORTANT: If the same old text appears in MULTIPLE places in a file, create a SEPARATE edit for EACH occurrence. Include enough surrounding context in old_string to make each edit unique. For example, instead of just "learn react", use "renders learn react link" for the first occurrence and "getByText(/learn react/i)" for the second."""
 
 
 def fix_test_failure(state: AgentState) -> dict:
