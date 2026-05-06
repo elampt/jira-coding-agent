@@ -1,0 +1,41 @@
+[project]
+name = "jira-coding-agent"
+version = "0.1.0"
+description = "AI agent that watches Jira for tickets, autonomously modifies a React codebase, and creates PRs with visual verification"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "Elambharathi Thangavel", email = "elambharathi.pt@gmail.com"},
+]
+
+dependencies = [
+    # Server
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+
+    # Validation & config
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "python-dotenv>=1.0.1",
+    "pyyaml>=6.0.2",
+
+    # Integrations
+    "atlassian-python-api>=4.0",
+    "PyGithub>=2.5.0",
+    "GitPython>=3.1.43",
+
+    # Agent framework
+    "langgraph>=1.0",
+    "langchain>=1.0",
+    "langchain-groq>=1.0",
+
+    # RAG
+    "faiss-cpu>=1.9.0",
+    "sentence-transformers>=3.0",
+
+    # MCP (for Playwright integration)
+    "mcp>=1.0",
+
+    # Observability
+    "langfuse>=4.0",
+]
