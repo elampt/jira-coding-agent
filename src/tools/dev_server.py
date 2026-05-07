@@ -10,6 +10,8 @@ Why kill between screenshots?
 """
 
 import logging
+import os
+import signal
 import subprocess
 import time
 import urllib.error
@@ -84,9 +86,6 @@ def stop_dev_server(process: subprocess.Popen) -> None:
     if process.poll() is None:  # still running
         # Kill the process group so all children die too
         try:
-            import os
-            import signal
-
             # Send SIGTERM to the whole process group
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
             process.wait(timeout=5)

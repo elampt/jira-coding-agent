@@ -76,7 +76,7 @@ def _generate_summary(
 
     llm = ChatGroq(api_key=secrets.groq_api_key, model="llama-3.3-70b-versatile")
     structured_llm = llm.with_structured_output(ChangeSummary)
-    return structured_llm.invoke(
+    return structured_llm.invoke(  # pyright: ignore[reportReturnType]
         [
             SystemMessage(content=SUMMARY_SYSTEM_PROMPT),
             HumanMessage(content=user_message),

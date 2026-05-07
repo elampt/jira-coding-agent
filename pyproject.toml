@@ -43,6 +43,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ruff>=0.6",
+    "pyright>=1.1.380",
 ]
 
 [tool.ruff]
@@ -64,3 +65,25 @@ ignore = [
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.pyright]
+include = ["src"]
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.10"
+
+# Suppress noise from third-party libs without type stubs
+# (atlassian-python-api, PyGithub, etc. — not OUR bugs)
+reportMissingTypeStubs = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownVariableType = "none"
+reportUnknownParameterType = "none"
+
+# LangChain/LangGraph use very broad union types intentionally for flexibility.
+# `with_structured_output()` returns `dict | BaseModel` so PyRight can't know
+# attributes; `RunnableConfig` is a TypedDict that doesn't accept plain dicts.
+# These are false positives at runtime — verified by extensive testing.
+reportAttributeAccessIssue = "none"
+reportArgumentType = "none"

@@ -34,10 +34,12 @@ def get_issue(issue_key: str) -> dict:
     """Read full ticket details from Jira.
 
     Returns a dict with keys like 'key', 'fields' (summary, description, status, etc.)
-    We use this when the agent needs the full ticket context beyond what the webhook sent.
+    Raises ValueError if the issue doesn't exist or is inaccessible.
     """
     jira = create_jira_client()
     issue = jira.issue(issue_key)
+    if not issue:
+        raise ValueError(f"Issue {issue_key} not found or inaccessible")
     logger.info(f"Fetched issue {issue_key}: {issue['fields']['summary']}")
     return issue
 

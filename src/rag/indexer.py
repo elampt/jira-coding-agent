@@ -62,7 +62,7 @@ def index_repo(repo_path: Path) -> None:
     # Simple and exact — fine for small codebases (<1000 files)
     # For millions of files, you'd use IndexIVFFlat (approximate, faster)
 
-    index.add(np.array(embeddings).astype("float32"))
+    index.add(np.array(embeddings).astype("float32"))  # pyright: ignore[reportCallIssue]
     logger.info(f"FAISS index created with {index.ntotal} vectors")
 
     # Step 5: Save to disk
