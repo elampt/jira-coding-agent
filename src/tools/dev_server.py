@@ -12,8 +12,8 @@ Why kill between screenshots?
 import logging
 import subprocess
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 from src.config import config
@@ -36,6 +36,7 @@ def start_dev_server(repo_path: Path) -> subprocess.Popen:
     # We pipe output to DEVNULL so the dev server's logs don't clutter our logs
     # start_new_session=True puts it in its own process group so we can kill the whole tree
     import os
+
     process = subprocess.Popen(
         command.split(),
         cwd=str(repo_path),
@@ -85,6 +86,7 @@ def stop_dev_server(process: subprocess.Popen) -> None:
         try:
             import os
             import signal
+
             # Send SIGTERM to the whole process group
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
             process.wait(timeout=5)

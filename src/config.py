@@ -10,13 +10,14 @@ Why two files?
 - .env is gitignored (contains secrets, never committed)
 """
 
-import yaml
 from pathlib import Path
+
+import yaml
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 
-
 # --- Structured config from config.yaml ---
+
 
 class LLMConfig(BaseModel):
     provider: str
@@ -53,6 +54,7 @@ class PlaywrightConfig(BaseModel):
 
 class AppConfig(BaseModel):
     """All settings from config.yaml, validated by Pydantic."""
+
     llm: LLMConfig
     embeddings: EmbeddingsConfig
     vector_store: VectorStoreConfig
@@ -63,12 +65,14 @@ class AppConfig(BaseModel):
 
 # --- Secrets from .env ---
 
+
 class EnvSecrets(BaseSettings):
     """API keys and tokens loaded from .env file.
 
     pydantic-settings automatically reads from environment variables
     and .env files. Field names map to env var names (case-insensitive).
     """
+
     groq_api_key: str = ""
     jira_base_url: str = ""
     jira_email: str = ""
@@ -84,6 +88,7 @@ class EnvSecrets(BaseSettings):
 
 
 # --- Load everything ---
+
 
 def load_config(config_path: str = "config.yaml") -> AppConfig:
     """Load and validate config.yaml."""

@@ -21,8 +21,8 @@ import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from src.rag.chunker import chunk_codebase
 from src.config import config
+from src.rag.chunker import chunk_codebase
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,7 @@ def index_repo(repo_path: Path) -> None:
 # Allow running as: python -m src.rag.indexer
 if __name__ == "__main__":
     import sys
+
     logging.basicConfig(level=logging.INFO)
 
     # Default to workspace repo, or pass a custom path

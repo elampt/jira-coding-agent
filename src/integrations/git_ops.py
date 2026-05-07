@@ -11,6 +11,7 @@ The cloned repo lives in workspace/ (gitignored).
 import logging
 import shutil
 from pathlib import Path
+
 from git import Repo
 
 from src.config import config

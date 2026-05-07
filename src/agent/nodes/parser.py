@@ -9,9 +9,11 @@ instead of free text, so we get typed, validated data automatically.
 """
 
 import logging
-from pydantic import BaseModel, Field
+
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
-from langchain_core.messages import SystemMessage, HumanMessage
+from pydantic import BaseModel, Field
+
 from src.agent.state import AgentState
 from src.config import secrets
 
@@ -20,8 +22,10 @@ logger = logging.getLogger(__name__)
 
 # --- Pydantic model for structured LLM output ---
 
+
 class TicketPlanOutput(BaseModel):
     """What we want the LLM to return — structured, validated."""
+
     intent: str = Field(description="What the ticket wants done in 5-10 words")
     component_hints: list[str] = Field(
         description="Keywords to search for in the codebase. Include: "
@@ -48,6 +52,7 @@ Always include the exact old text/value that needs to be found in the code."""
 
 
 # --- Node function ---
+
 
 def parse_ticket(state: AgentState) -> dict:
     """PARSE node — called by LangGraph.
@@ -76,7 +81,9 @@ def parse_ticket(state: AgentState) -> dict:
     ]
     result = structured_llm.invoke(messages)
 
-    logger.info(f"Parsed: intent={result.intent}, hints={result.component_hints}, risk={result.risk_level}")
+    logger.info(
+        f"Parsed: intent={result.intent}, hints={result.component_hints}, risk={result.risk_level}"
+    )
 
     # Return partial state update
     return {

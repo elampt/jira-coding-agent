@@ -9,7 +9,9 @@ We just call methods like jira.issue("ELAMP2-1") and get back data.
 """
 
 import logging
+
 from atlassian import Jira
+
 from src.config import secrets
 
 logger = logging.getLogger(__name__)

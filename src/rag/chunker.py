@@ -64,11 +64,13 @@ def chunk_codebase(repo_path: Path) -> list[dict]:
             # Content preview gives it the actual code patterns
             embed_text = f"{relative_path}\n\n{content[:MAX_EMBED_CHARS]}"
 
-            chunks.append({
-                "path": relative_path,
-                "content": content,
-                "embed_text": embed_text,
-            })
+            chunks.append(
+                {
+                    "path": relative_path,
+                    "content": content,
+                    "embed_text": embed_text,
+                }
+            )
 
             logger.info(f"Chunked: {relative_path} ({len(content)} chars)")
 

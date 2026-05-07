@@ -14,6 +14,7 @@ silently skipped — useful for development without LangFuse setup.
 """
 
 import logging
+
 from src.config import secrets
 
 logger = logging.getLogger(__name__)
@@ -29,9 +30,11 @@ def get_langfuse_handler():
         return None
 
     try:
-        from langfuse.langchain import CallbackHandler
         # Initialize the Langfuse client first so it picks up env vars
         import os
+
+        from langfuse.langchain import CallbackHandler
+
         os.environ["LANGFUSE_PUBLIC_KEY"] = secrets.langfuse_public_key
         os.environ["LANGFUSE_SECRET_KEY"] = secrets.langfuse_secret_key
         os.environ["LANGFUSE_HOST"] = secrets.langfuse_host

@@ -13,9 +13,11 @@ Uses the same Pydantic structured output as the PLAN node.
 
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
+
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
-from langchain_core.messages import SystemMessage, HumanMessage
+from pydantic import BaseModel, Field
+
 from src.agent.state import AgentState
 from src.config import secrets
 
@@ -110,7 +112,9 @@ def fix_test_failure(state: AgentState) -> dict:
 
     logger.info(f"Fix plan: {result.explanation}")
     for edit in result.edits:
-        logger.info(f"  Fix: {edit.file} | '{edit.old_string[:40]}...' → '{edit.new_string[:40]}...'")
+        logger.info(
+            f"  Fix: {edit.file} | '{edit.old_string[:40]}...' → '{edit.new_string[:40]}...'"
+        )
 
     edit_plan = [
         {"file": edit.file, "old_string": edit.old_string, "new_string": edit.new_string}

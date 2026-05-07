@@ -18,17 +18,17 @@ import logging
 import subprocess
 from pathlib import Path
 
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import BackgroundTasks, FastAPI
 from langgraph.types import Command
 
-from src.server.models import JiraWebhookPayload
-from src.integrations.git_ops import clone_repo, create_branch, commit_changes, push_branch
-from src.integrations.github_client import create_pull_request
-from src.integrations.jira_client import add_comment
-from src.rag.indexer import index_repo
 from src.agent.graph import agent
 from src.agent.nodes.screenshotter import _capture_screenshot
+from src.integrations.git_ops import clone_repo, commit_changes, create_branch, push_branch
+from src.integrations.github_client import create_pull_request
+from src.integrations.jira_client import add_comment
 from src.observability import langfuse_handler
+from src.rag.indexer import index_repo
+from src.server.models import JiraWebhookPayload
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ def _finalize(issue_key: str, result: dict) -> None:
         add_comment(
             issue_key,
             f"Agent made changes but tests are still failing after {retry_count} fix attempts. "
-            f"Needs human review.\n\nTest output:\n```\n{result.get('test_output', '')[-500:]}\n```"
+            f"Needs human review.\n\nTest output:\n```\n{result.get('test_output', '')[-500:]}\n```",
         )
         logger.warning(f"Tests still failing for {issue_key} — commented on Jira")
         _session_store.pop(issue_key, None)
@@ -105,6 +105,7 @@ def _finalize(issue_key: str, result: dict) -> None:
     # GitHub PR descriptions don't render relative paths — need full raw URLs
     # Format: https://github.com/{owner}/{repo}/raw/{branch}/agent-screenshots/before.png
     from src.integrations.github_client import _get_repo_full_name
+
     repo_full_name = _get_repo_full_name()
     raw_base = f"https://github.com/{repo_full_name}/raw/{branch_name}/agent-screenshots"
 
@@ -226,13 +227,14 @@ def process_comment(issue_key: str, comment_body: str):
     # Skip agent's own comments — they all start with "🤖"
     # Without this, the agent's own "Reply with `approve`" message would trigger a resume
     if comment_body.lstrip().startswith("🤖"):
-        logger.info(f"Skipping agent's own comment")
+        logger.info("Skipping agent's own comment")
         return
 
     # Detect intent — be strict to avoid false positives.
     # The cleaned comment must be EXACTLY "approve"/"reject" (with optional whitespace),
     # ignoring any Jira account-mention prefix like "[~accountid:...]".
     import re
+
     cleaned = re.sub(r"\[~accountid:[^\]]+\]", "", comment_body).strip().lower()
 
     if cleaned in ("approve", "approved"):
@@ -240,7 +242,7 @@ def process_comment(issue_key: str, comment_body: str):
     elif cleaned in ("reject", "rejected"):
         human_response = "rejected"
     else:
-        logger.info(f"Comment is not a clear approval/rejection — ignoring")
+        logger.info("Comment is not a clear approval/rejection — ignoring")
         return
 
     logger.info(f"Resuming agent for {issue_key} with: {human_response}")

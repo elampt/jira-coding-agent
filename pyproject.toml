@@ -39,3 +39,28 @@ dependencies = [
     # Observability
     "langfuse>=4.0",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors (PEP 8 violations)
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes (unused imports, undefined names)
+    "I",    # isort (import sorting)
+    "B",    # flake8-bugbear (likely bugs)
+    "UP",   # pyupgrade (modernize old Python syntax)
+]
+ignore = [
+    "E501",  # line too long — formatter handles this
+]
+
+[tool.ruff.format]
+quote-style = "double"

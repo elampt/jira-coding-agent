@@ -12,10 +12,11 @@ understand the change at a glance instead of mentally diffing truncated strings.
 """
 
 import logging
-from pydantic import BaseModel, Field
+
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
-from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.types import interrupt
+from pydantic import BaseModel, Field
 
 from src.agent.state import AgentState
 from src.config import secrets
@@ -30,6 +31,7 @@ _posted_approvals: set[str] = set()
 
 class ChangeSummary(BaseModel):
     """LLM-generated summary of the agent's plan, for human review."""
+
     summary: str = Field(
         description="2-3 sentences in plain English explaining what the agent is about to do and why"
     )
@@ -49,7 +51,9 @@ Be specific about:
 Be concise. Reviewers are busy — short and clear beats long and thorough."""
 
 
-def _generate_summary(ticket_plan: dict, edit_plan: list[dict], summary: str, description: str) -> ChangeSummary:
+def _generate_summary(
+    ticket_plan: dict, edit_plan: list[dict], summary: str, description: str
+) -> ChangeSummary:
     """Ask the LLM to summarize the planned changes for human review."""
     # Build a clear prompt with all context
     edits_text = ""
@@ -72,10 +76,12 @@ def _generate_summary(ticket_plan: dict, edit_plan: list[dict], summary: str, de
 
     llm = ChatGroq(api_key=secrets.groq_api_key, model="llama-3.3-70b-versatile")
     structured_llm = llm.with_structured_output(ChangeSummary)
-    return structured_llm.invoke([
-        SystemMessage(content=SUMMARY_SYSTEM_PROMPT),
-        HumanMessage(content=user_message),
-    ])
+    return structured_llm.invoke(
+        [
+            SystemMessage(content=SUMMARY_SYSTEM_PROMPT),
+            HumanMessage(content=user_message),
+        ]
+    )
 
 
 def _format_jira_comment(
@@ -97,7 +103,9 @@ def _format_jira_comment(
     files_count: dict[str, int] = {}
     for edit in edit_plan:
         files_count[edit["file"]] = files_count.get(edit["file"], 0) + 1
-    files_summary = ", ".join(f"{f} ({n} edit{'s' if n > 1 else ''})" for f, n in files_count.items())
+    files_summary = ", ".join(
+        f"{f} ({n} edit{'s' if n > 1 else ''})" for f, n in files_count.items()
+    )
 
     # Risk concerns as bullets
     risk_bullets = "\n".join(f"- {r}" for r in summary_obj.risk_concerns)
@@ -159,7 +167,9 @@ def wait_for_approval(state: AgentState) -> dict:
             logger.warning(f"Summary generation failed: {e}. Using fallback.")
             summary_obj = ChangeSummary(
                 summary=f"Agent plans to make {len(edit_plan)} edit(s) for: {ticket_plan['intent']}",
-                risk_concerns=["LLM-generated summary unavailable — review the detailed edits below carefully"],
+                risk_concerns=[
+                    "LLM-generated summary unavailable — review the detailed edits below carefully"
+                ],
             )
 
         # Format and post to Jira

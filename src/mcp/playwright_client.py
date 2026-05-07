@@ -18,11 +18,12 @@ The MCP server runs Playwright internally — we never touch Playwright directly
 
 import asyncio
 import logging
-from pathlib import Path
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+from mcp.client.stdio import stdio_client
 
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +65,7 @@ async def take_screenshot_async(url: str, output_path: Path) -> bool:
         async with playwright_session() as session:
             # 1. Navigate to the URL
             logger.info(f"  Playwright: navigating to {url}")
-            await session.call_tool(
-                "browser_navigate",
-                arguments={"url": url}
-            )
+            await session.call_tool("browser_navigate", arguments={"url": url})
 
             # 2. Take a screenshot
             logger.info(f"  Playwright: taking screenshot → {output_path}")
@@ -77,7 +75,7 @@ async def take_screenshot_async(url: str, output_path: Path) -> bool:
                 arguments={
                     "filename": str(output_path),
                     "fullPage": True,  # capture entire page, not just viewport
-                }
+                },
             )
 
             # The MCP server saves the screenshot to disk for us

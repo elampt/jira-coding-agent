@@ -10,6 +10,7 @@ If old_string is not found (LLM hallucinated), that edit is skipped with a warni
 
 import logging
 from pathlib import Path
+
 from src.agent.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,9 @@ def apply_changes(state: AgentState) -> dict:
             logger.warning(
                 f"old_string not found in {edit['file']}: '{edit['old_string'][:50]}...' — skipping edit"
             )
-            changes_made.append(f"SKIPPED: '{edit['old_string'][:30]}...' not found in {edit['file']}")
+            changes_made.append(
+                f"SKIPPED: '{edit['old_string'][:30]}...' not found in {edit['file']}"
+            )
             continue
         else:
             # Apply the replacement
@@ -58,7 +61,9 @@ def apply_changes(state: AgentState) -> dict:
 
         file_path.write_text(new_content)
 
-        change_desc = f"{edit['file']}: replaced '{edit['old_string'][:30]}' with '{edit['new_string'][:30]}'"
+        change_desc = (
+            f"{edit['file']}: replaced '{edit['old_string'][:30]}' with '{edit['new_string'][:30]}'"
+        )
         changes_made.append(change_desc)
         logger.info(f"  Applied: {change_desc}")
 

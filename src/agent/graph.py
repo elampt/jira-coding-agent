@@ -14,17 +14,18 @@ Phase 6 flow:
 """
 
 import logging
-from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.memory import MemorySaver
 
-from src.agent.state import AgentState
-from src.agent.nodes.parser import parse_ticket
-from src.agent.nodes.searcher import search_codebase
-from src.agent.nodes.planner import plan_changes
-from src.agent.nodes.writer import apply_changes
-from src.agent.nodes.tester import run_tests
-from src.agent.nodes.fixer import fix_test_failure
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
+
 from src.agent.nodes.approver import wait_for_approval
+from src.agent.nodes.fixer import fix_test_failure
+from src.agent.nodes.parser import parse_ticket
+from src.agent.nodes.planner import plan_changes
+from src.agent.nodes.searcher import search_codebase
+from src.agent.nodes.tester import run_tests
+from src.agent.nodes.writer import apply_changes
+from src.agent.state import AgentState
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def should_wait_for_approval(state: AgentState) -> str:
     """
     risk = state["ticket_plan"].get("risk_level", "low")
     if risk == "high":
-        logger.info(f"High-risk change — routing to approval")
+        logger.info("High-risk change — routing to approval")
         return "wait_approval"
     logger.info(f"{risk.capitalize()}-risk change — proceeding automatically")
     return "write"
@@ -107,7 +108,7 @@ def build_agent():
         {
             "write": "write",
             "wait_approval": "wait_approval",
-        }
+        },
     )
 
     # After WAIT_APPROVAL: check response → proceed or cancel
@@ -117,7 +118,7 @@ def build_agent():
         {
             "write": "write",
             "end": END,
-        }
+        },
     )
 
     # WRITE → TEST (same as before)
@@ -130,7 +131,7 @@ def build_agent():
         {
             "end": END,
             "fix": "fix",
-        }
+        },
     )
 
     # Self-heal loop: fix → write → test

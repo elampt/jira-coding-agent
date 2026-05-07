@@ -10,9 +10,11 @@ are fragile — they shift when code changes. String matching is reliable.
 """
 
 import logging
-from pydantic import BaseModel, Field
+
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
-from langchain_core.messages import SystemMessage, HumanMessage
+from pydantic import BaseModel, Field
+
 from src.agent.state import AgentState
 from src.config import secrets
 
@@ -21,15 +23,20 @@ logger = logging.getLogger(__name__)
 
 # --- Pydantic models for structured LLM output ---
 
+
 class EditInstruction(BaseModel):
     """A single edit the agent should make."""
+
     file: str = Field(description="Relative file path, e.g. src/App.js")
-    old_string: str = Field(description="The EXACT text to find in the file (copy-paste from the code)")
+    old_string: str = Field(
+        description="The EXACT text to find in the file (copy-paste from the code)"
+    )
     new_string: str = Field(description="The replacement text")
 
 
 class EditPlanOutput(BaseModel):
     """Complete edit plan — list of all edits needed."""
+
     edits: list[EditInstruction] = Field(description="All edits to make, in order")
     explanation: str = Field(description="Brief explanation of what changes are being made and why")
 
@@ -61,6 +68,7 @@ CRITICAL: The old_string must match EXACTLY. If you get even one character wrong
 
 
 # --- Node function ---
+
 
 def plan_changes(state: AgentState) -> dict:
     """PLAN node — called by LangGraph.
@@ -102,7 +110,9 @@ def plan_changes(state: AgentState) -> dict:
 
     logger.info(f"Plan: {result.explanation}")
     for edit in result.edits:
-        logger.info(f"  Edit: {edit.file} | '{edit.old_string[:40]}...' → '{edit.new_string[:40]}...'")
+        logger.info(
+            f"  Edit: {edit.file} | '{edit.old_string[:40]}...' → '{edit.new_string[:40]}...'"
+        )
 
     # Convert to list of dicts for state
     edit_plan = [

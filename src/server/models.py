@@ -40,6 +40,7 @@ class JiraWebhookPayload(BaseModel):
     - "jira:issue_created" → new ticket
     - "comment_created"    → someone commented (used for human-in-the-loop)
     """
+
     webhookEvent: str
     issue: JiraIssue
     comment: JiraComment | None = None  # Only present for comment events

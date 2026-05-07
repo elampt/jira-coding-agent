@@ -10,7 +10,9 @@ We extract owner/repo from the config URL:
 """
 
 import logging
+
 from github import Github
+
 from src.config import config, secrets
 
 logger = logging.getLogger(__name__)
@@ -45,8 +47,8 @@ def create_pull_request(branch_name: str, title: str, body: str) -> str:
     pr = repo.create_pull(
         title=title,
         body=body,
-        head=branch_name,   # branch WITH changes (source)
-        base="main",        # branch to merge INTO (target)
+        head=branch_name,  # branch WITH changes (source)
+        base="main",  # branch to merge INTO (target)
     )
 
     logger.info(f"PR created: {pr.html_url}")
