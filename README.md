@@ -127,6 +127,9 @@ flowchart TD
 | **Agent Framework** | LangGraph, LangChain |
 | **LLM** | Llama 3.3 70B via Groq (free) — config-swappable to Claude / GPT-4 |
 | **Server** | FastAPI, uvicorn |
+| **Package Manager** | UV (modern Rust-based, replaces pip + venv) |
+| **Code Quality** | Ruff (lint + format), PyRight (static type checking) |
+| **Build Automation** | Makefile (one-command workflows) |
 | **RAG** | FAISS, sentence-transformers (all-MiniLM-L6-v2) |
 | **Visual Testing** | Playwright via MCP (Anthropic's Model Context Protocol) |
 | **Observability** | LangFuse |
@@ -231,12 +234,11 @@ Pass → PR created  |  Still failing → "needs human review" comment on Jira
 git clone https://github.com/elampt/jira-coding-agent.git
 cd jira-coding-agent
 
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+# Install UV (modern Python package manager) if you don't have it
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install dependencies
-pip install -r requirements.txt
+# Install all dependencies (creates .venv automatically)
+make install
 
 # Copy and fill in your API keys
 cp .env.example .env
@@ -261,7 +263,18 @@ target_repo:
 
 ```bash
 # Terminal 1 — start the FastAPI server
-uvicorn src.server.app:app --port 8000
+make run
+```
+
+### Developer Workflow
+
+```bash
+make help        # Show available commands
+make lint        # Check code style with Ruff
+make format      # Auto-format code
+make type-check  # Run PyRight type checker
+make check       # Run lint + type-check (before committing)
+make clean       # Remove workspace, data, screenshots
 ```
 
 ### Setting Up ngrok (Webhook Tunnel)
