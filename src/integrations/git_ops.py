@@ -14,12 +14,28 @@ from pathlib import Path
 
 from git import Repo
 
-from src.config import config
+from src.config import config, secrets
 
 logger = logging.getLogger(__name__)
 
 # All cloned repos go here — gitignored so we don't commit someone else's code
 WORKSPACE_DIR = Path("workspace")
+
+
+def _authenticated_remote_url() -> str:
+    """Return the GitHub HTTPS URL with token embedded for authentication.
+
+    Required when running inside Docker where the host's git credentials
+    aren't available. Uses GITHUB_TOKEN from .env.
+
+    Format: https://<token>@github.com/owner/repo.git
+    """
+    token = secrets.github_token
+    repo_url = config.target_repo.url
+    # Strip "https://" and re-add it with token
+    if repo_url.startswith("https://"):
+        return repo_url.replace("https://", f"https://{token}@")
+    return repo_url
 
 
 def clone_repo(issue_key: str) -> Path:
@@ -100,6 +116,11 @@ def push_branch(repo_path: Path, branch_name: str) -> None:
     ticket always works cleanly.
     """
     repo = Repo(repo_path)
+
+    # Update origin to include the auth token (needed inside containers
+    # where the host's git credentials aren't available)
+    auth_url = _authenticated_remote_url()
+    repo.git.remote("set-url", "origin", auth_url)
 
     # Delete remote branch if it exists (from a previous run)
     try:

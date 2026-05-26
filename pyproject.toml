@@ -31,6 +31,7 @@ dependencies = [
 
     # RAG
     "faiss-cpu>=1.9.0",
+    "torch>=2.0",
     "sentence-transformers>=3.0",
 
     # MCP (for Playwright integration)
@@ -45,6 +46,17 @@ dev = [
     "ruff>=0.6",
     "pyright>=1.1.380",
 ]
+
+# CPU-only torch: by default torch ships with ~4.5 GB of CUDA/GPU libraries.
+# We deploy to CPU-only EC2, so we route torch to PyTorch's CPU-only index.
+# Net result: ~4.5 GB smaller Docker image, same API, same speed (no GPU anyway).
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
 
 [tool.ruff]
 line-length = 100
