@@ -25,7 +25,7 @@ from src.agent.graph import agent
 from src.agent.nodes.screenshotter import _capture_screenshot
 from src.integrations.git_ops import clone_repo, commit_changes, create_branch, push_branch
 from src.integrations.github_client import create_pull_request
-from src.integrations.jira_client import add_comment
+from src.integrations.jira_client import add_comment, update_status
 from src.observability import langfuse_handler
 from src.rag.indexer import index_repo
 from src.server.models import JiraWebhookPayload
@@ -78,6 +78,10 @@ def _finalize(issue_key: str, result: dict) -> None:
     # If the human rejected, stop here
     if approval_status == "rejected":
         add_comment(issue_key, "🤖 Task cancelled by user.")
+        try:
+            update_status(issue_key, "Done")
+        except Exception as e:
+            logger.warning(f"Could not update status to Done: {e}")
         logger.info(f"Task cancelled for {issue_key}")
         _session_store.pop(issue_key, None)
         return
@@ -89,6 +93,10 @@ def _finalize(issue_key: str, result: dict) -> None:
             f"Agent made changes but tests are still failing after {retry_count} fix attempts. "
             f"Needs human review.\n\nTest output:\n```\n{result.get('test_output', '')[-500:]}\n```",
         )
+        try:
+            update_status(issue_key, "Done")
+        except Exception as e:
+            logger.warning(f"Could not update status to Done: {e}")
         logger.warning(f"Tests still failing for {issue_key} — commented on Jira")
         _session_store.pop(issue_key, None)
         return
@@ -136,6 +144,13 @@ def _finalize(issue_key: str, result: dict) -> None:
         body=pr_body,
     )
     add_comment(issue_key, f"PR created: {pr_url}")
+
+    # Move to "In Review" — human now needs to review & merge the PR
+    try:
+        update_status(issue_key, "In Review")
+    except Exception as e:
+        logger.warning(f"Could not update status to In Review: {e}")
+
     logger.info(f"Pipeline complete for {issue_key}: {pr_url}")
 
     # Cleanup session
@@ -150,6 +165,12 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
     """
     try:
         logger.info(f"Processing ticket {issue_key}: {summary}")
+
+        # Move ticket to "In Progress" so humans can see it's being worked on
+        try:
+            update_status(issue_key, "In Progress")
+        except Exception as e:
+            logger.warning(f"Could not update status to In Progress: {e}")
 
         repo_path = clone_repo(issue_key)
 
@@ -197,6 +218,11 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
             logger.info(
                 f"Agent paused on {issue_key} at node {state_snapshot.next} — waiting for human reply"
             )
+            # Move to "In Review" — agent posted plan, waiting for human approve/reject
+            try:
+                update_status(issue_key, "In Review")
+            except Exception as e:
+                logger.warning(f"Could not update status to In Review: {e}")
             return
 
         # Agent ran to completion — finalize

@@ -16,6 +16,7 @@ Flow for each screenshot:
 """
 
 import logging
+import os
 from pathlib import Path
 
 from src.agent.state import AgentState
@@ -25,17 +26,29 @@ from src.tools.dev_server import start_dev_server, stop_dev_server, wait_for_ser
 
 logger = logging.getLogger(__name__)
 
+# Visual verification (Playwright) is opt-in via env var.
+# Lets us skip it in Docker/EC2 deployments where browser binaries aren't available.
+# Default: enabled when running locally, disabled in production containers.
+VISUAL_VERIFICATION_ENABLED = os.getenv("ENABLE_VISUAL_VERIFICATION", "true").lower() == "true"
+
 
 def _capture_screenshot(repo_path: Path, output_path: Path, label: str) -> bool:
     """Start dev server, take a screenshot, kill dev server.
+
+    If ENABLE_VISUAL_VERIFICATION is disabled (env var), skip silently
+    and return False — the agent flow continues without screenshots.
 
     Args:
         repo_path: Path to the React project
         output_path: Where to save the PNG
         label: "before" or "after" — for logging
 
-    Returns: True on success, False on failure
+    Returns: True on success, False on failure or when disabled
     """
+    if not VISUAL_VERIFICATION_ENABLED:
+        logger.info(f"Visual verification disabled — skipping {label} screenshot")
+        return False
+
     logger.info(f"Capturing {label} screenshot...")
 
     process = start_dev_server(repo_path)
