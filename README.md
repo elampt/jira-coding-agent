@@ -2,6 +2,8 @@
 
 An AI agent that watches Jira for new tickets, autonomously modifies a React frontend codebase, runs tests with self-healing, takes visual before/after screenshots via Playwright MCP, and creates pull requests — with human-in-the-loop approval for high-risk changes and full LangFuse observability.
 
+> **Live deployment:** [https://jira-agent.elambharathi.com/health](https://jira-agent.elambharathi.com/health) (AWS EC2, ap-south-1)
+>
 > **Demo video:** [Watch the full demo on Loom](https://www.loom.com/share/96e206ad8dea4aee9d2c5ea69d9fe5c3)
 
 ## In Action
@@ -130,11 +132,74 @@ flowchart TD
 | **Package Manager** | UV (modern Rust-based, replaces pip + venv) |
 | **Code Quality** | Ruff (lint + format), PyRight (static type checking) |
 | **Build Automation** | Makefile (one-command workflows) |
-| **RAG** | FAISS, sentence-transformers (all-MiniLM-L6-v2) |
+| **Containerization** | Docker (multi-stage build, ~800 MB image, non-root user) |
+| **Deployment** | AWS EC2 (t3.micro, ap-south-1), Elastic IP, Caddy reverse proxy, Let's Encrypt HTTPS |
+| **RAG** | FAISS, sentence-transformers (all-MiniLM-L6-v2, CPU-only torch) |
 | **Visual Testing** | Playwright via MCP (Anthropic's Model Context Protocol) |
 | **Observability** | LangFuse |
 | **Integrations** | Jira REST API, GitHub API (PyGithub), Git (GitPython) |
 | **Validation** | Pydantic (structured LLM output + webhook payload validation) |
+
+## Production Deployment
+
+The agent is deployed on AWS EC2 in `ap-south-1` (Mumbai) with HTTPS termination at the edge.
+
+```mermaid
+flowchart LR
+    Internet[Internet]
+    Cloudflare["Cloudflare DNS<br/>(jira-agent.elambharathi.com)"]
+    EIP["AWS Elastic IP<br/>3.110.251.128"]
+    Caddy["Caddy reverse proxy<br/>:443 HTTPS · Let's Encrypt"]
+    Docker["Docker container<br/>:8000 (localhost only)"]
+    Agent["LangGraph Agent"]
+
+    Internet -- "HTTPS" --> Cloudflare
+    Cloudflare -- "A record" --> EIP
+    EIP -- ":443" --> Caddy
+    Caddy -- "HTTP proxy to :8000" --> Docker
+    Docker --> Agent
+```
+
+### Production Stack
+
+| Layer | Choice | Why |
+|-------|--------|-----|
+| Compute | EC2 t3.micro | AWS free tier (after free tier: ~$8/mo) |
+| Storage | 30 GB gp3 EBS + 2 GB swap | Fits container (~800 MB) + workspace + node_modules |
+| Networking | Elastic IP | Stable IP across instance restarts |
+| DNS | Cloudflare (DNS-only, not proxied) | Custom subdomain pointing at Elastic IP |
+| TLS | Caddy + Let's Encrypt | Auto cert issuance + renewal, zero config |
+| Reverse proxy | Caddy | Single tool, 3-line config |
+| Container runtime | Docker (auto-restart unless-stopped) | Survives EC2 reboots automatically |
+
+### Production Hardening
+
+| Concern | Mitigation |
+|---------|-----------|
+| Backend exposed to internet | Container binds to `127.0.0.1:8000` only — Caddy is the only entry point |
+| Secrets in image | `.env` mounted at runtime as read-only volume |
+| Container runs as root | Dockerfile creates non-root `appuser` |
+| Container crashes | `--restart unless-stopped` policy |
+| EC2 reboots | Docker daemon `systemctl enable`'d |
+| Image size bloat | Multi-stage build + CPU-only torch (6 GB → 800 MB, 87% reduction) |
+| HTTPS cert renewal | Caddy auto-renews ~30 days before expiry |
+| SSH brute-force | Security group restricts port 22 to my IP |
+
+### Image Size Optimization
+
+The default torch package ships with ~4.5 GB of nvidia/CUDA libraries unnecessary for CPU-only EC2 deployment. The agent uses `[tool.uv.sources]` to route torch to PyTorch's CPU-only index:
+
+```toml
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+```
+
+Result: 6 GB → 800 MB image. Faster builds, faster pulls, lower disk usage.
 
 ## Project Structure
 
@@ -178,8 +243,12 @@ jira-coding-agent/
 │   └── observability.py            # LangFuse callback handler
 │
 ├── config.yaml                     # Project settings (LLM, repo, commands)
-├── .env.example                    # Template for API keys
-└── requirements.txt                # Python dependencies
+├── pyproject.toml                  # Project metadata + dependencies (PEP 621)
+├── uv.lock                         # Pinned dependency versions (reproducible builds)
+├── Dockerfile                      # Multi-stage build for production image
+├── .dockerignore                   # Excludes secrets, .venv, workspace, etc.
+├── Makefile                        # One-command developer workflow
+└── .env.example                    # Template for API keys
 ```
 
 ## How It Works
@@ -261,9 +330,28 @@ target_repo:
 
 ### Running the Server
 
+**Option A — Local (fast iteration during development):**
+
 ```bash
-# Terminal 1 — start the FastAPI server
+# Terminal 1 — start the FastAPI server with auto-reload
 make run
+```
+
+**Option B — Docker (matches production environment):**
+
+```bash
+# Build the image (first time only; subsequent builds use cache)
+docker build -t jira-coding-agent:latest .
+
+# Run the container
+docker run -d \
+  --name jira-agent \
+  -p 8000:8000 \
+  -v "$(pwd)/.env:/app/.env:ro" \
+  jira-coding-agent:latest
+
+# View logs
+docker logs -f jira-agent
 ```
 
 ### Developer Workflow
@@ -277,7 +365,7 @@ make check       # Run lint + type-check (before committing)
 make clean       # Remove workspace, data, screenshots
 ```
 
-### Setting Up ngrok (Webhook Tunnel)
+### Setting Up ngrok (Local Development Only)
 
 Jira Cloud needs to send webhooks to your server, but your `localhost:8000` isn't accessible from the internet. **ngrok** creates a public URL that tunnels requests to your local machine.
 
@@ -294,7 +382,7 @@ ngrok http 8000
 
 ngrok will display a public URL like `https://abc123.ngrok-free.dev`. This is your webhook URL.
 
-> **Note:** The free tier generates a random URL each time you restart ngrok. For production, deploy to AWS EC2 with a static public IP — no ngrok needed.
+> **For production:** skip ngrok. Run inside Docker on a cloud VM with a real domain. See [Production Deployment](#production-deployment) section above.
 
 ### Configuring Jira Webhook
 
