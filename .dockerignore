@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Environment & secrets — NEVER bake these into the image
+.env
+.env.local
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Git
+.git/
+.gitignore
+
+# Build artifacts
+build/
+dist/
+
+# Project-specific runtime data
+workspace/
+data/
+screenshots/
+
+# Playwright debug artifacts
+.playwright-mcp/
+
+# Documentation that isn't needed in the container
+LEARNING_JOURNAL.md
+*.md
+!README.md
+
+# Docker meta
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Test artifacts
+.ruff_cache/
+.coverage
+htmlcov/
