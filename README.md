@@ -2,7 +2,7 @@
 
 An AI agent that watches Jira for new tickets, autonomously modifies a React frontend codebase, runs tests with self-healing, takes visual before/after screenshots via Playwright MCP, and creates pull requests — with human-in-the-loop approval for high-risk changes and full LangFuse observability.
 
-> **Live deployment:** [https://jira-agent.elambharathi.com/health](https://jira-agent.elambharathi.com/health) (AWS EC2, ap-south-1)
+> **Deployed to AWS EC2** (ap-south-1, Mumbai) at `jira-agent.elambharathi.com` — see [Production Deployment](#production-deployment) below for full architecture and runbook. Instance currently stopped to minimize idle compute cost; restartable in ~2 min via the runbook.
 >
 > **Demo video:** [Watch the full demo on Loom](https://www.loom.com/share/96e206ad8dea4aee9d2c5ea69d9fe5c3)
 
