@@ -60,6 +60,7 @@ class AgentState(TypedDict):
 
     # PLAN node output
     edit_plan: list[EditInstruction]
+    plan_summary: str  # Plain-English explanation of the planned changes (used in the PR body)
 
     # WRITE node output
     changes_made: list[str]
@@ -67,6 +68,8 @@ class AgentState(TypedDict):
     # TEST node output
     test_passed: bool  # Did tests pass?
     test_output: str  # stdout/stderr from npm test
+    # True when the tests couldn't run at all (e.g. npm missing) — nothing for the LLM to fix
+    environment_failure: bool
     retry_count: int  # How many times we've retried (max 3)
 
     # SCREENSHOT node outputs

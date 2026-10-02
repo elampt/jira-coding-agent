@@ -12,11 +12,10 @@ are fragile — they shift when code changes. String matching is reliable.
 import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
 
 from src.agent.state import AgentState
-from src.config import secrets
+from src.llm import invoke_structured
 
 logger = logging.getLogger(__name__)
 
@@ -95,18 +94,11 @@ def plan_changes(state: AgentState) -> dict:
         f"Create an edit plan to fulfill this ticket."
     )
 
-    # Create LLM with structured output
-    llm = ChatGroq(
-        api_key=secrets.groq_api_key,
-        model="llama-3.3-70b-versatile",
-    )
-    structured_llm = llm.with_structured_output(EditPlanOutput)
-
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(content=user_message),
     ]
-    result = structured_llm.invoke(messages)
+    result = invoke_structured(EditPlanOutput, messages)
 
     logger.info(f"Plan: {result.explanation}")
     for edit in result.edits:
@@ -120,4 +112,4 @@ def plan_changes(state: AgentState) -> dict:
         for edit in result.edits
     ]
 
-    return {"edit_plan": edit_plan}
+    return {"edit_plan": edit_plan, "plan_summary": result.explanation}

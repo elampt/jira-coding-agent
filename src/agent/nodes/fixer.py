@@ -12,16 +12,51 @@ Uses the same Pydantic structured output as the PLAN node.
 """
 
 import logging
+import re
 from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
 
 from src.agent.state import AgentState
-from src.config import secrets
+from src.integrations.git_ops import worktree_changed_files
+from src.llm import invoke_structured
 
 logger = logging.getLogger(__name__)
+
+# ~4K tokens of source. Groq's free tier allows 8K tokens/minute in total, and showing the model
+# more code than it needs also tempts it to edit things that aren't broken.
+MAX_CONTEXT_CHARS = 16000
+SOURCE_SUFFIXES = {".js", ".jsx", ".ts", ".tsx"}
+# Paths like src/components/Nav.test.js in Jest output (the lookbehind skips node_modules/.../src/x)
+_PATH_IN_OUTPUT = re.compile(r"(?<![\w./-])src/[\w./@-]+\.(?:jsx?|tsx?)")
+
+
+def _is_source_file(repo_path: Path, relative: str) -> bool:
+    path = repo_path / relative
+    return path.is_file() and path.suffix in SOURCE_SUFFIXES and "node_modules" not in path.parts
+
+
+def _files_to_show(state: AgentState, repo_path: Path) -> list[str]:
+    """Source files worth showing the model, most relevant first, searched recursively.
+
+    Order: files named in the failure output, files the agent already edited, then the files
+    the search step found for this ticket. Falls back to every source file under src/.
+    """
+    candidates = _PATH_IN_OUTPUT.findall(state["test_output"])
+    candidates += worktree_changed_files(repo_path)
+    candidates += [f["path"] for f in state.get("relevant_files", [])]
+
+    ordered = list(dict.fromkeys(c for c in candidates if _is_source_file(repo_path, c)))
+    if ordered:
+        return ordered
+
+    everything = (p for p in (repo_path / "src").rglob("*") if p.suffix in SOURCE_SUFFIXES)
+    return [
+        str(p.relative_to(repo_path))
+        for p in sorted(everything)
+        if _is_source_file(repo_path, str(p.relative_to(repo_path)))
+    ]
 
 
 class FixInstruction(BaseModel):
@@ -81,14 +116,15 @@ def fix_test_failure(state: AgentState) -> dict:
     # This is critical: after fix attempt 1 modifies files, attempt 2 needs
     # to see the CURRENT state of files, not the original state.
     file_contents = ""
-    seen = set()
-    for pattern in ["*.js", "*.jsx", "*.ts", "*.tsx"]:
-        for f in (repo_path / "src").glob(pattern):
-            relative = str(f.relative_to(repo_path))
-            if relative not in seen:
-                seen.add(relative)
-                content = f.read_text()
-                file_contents += f"\n--- {relative} ---\n{content}\n"
+    included = []
+    for relative in _files_to_show(state, repo_path):
+        content = (repo_path / relative).read_text()
+        # Always include the first (most relevant) file; after that, stay inside the budget.
+        if included and len(file_contents) + len(content) > MAX_CONTEXT_CHARS:
+            continue
+        included.append(relative)
+        file_contents += f"\n--- {relative} ---\n{content}\n"
+    logger.info(f"Fixer context: {len(included)} file(s): {included}")
 
     user_message = (
         f"## Test Failure Output\n```\n{test_output}\n```\n\n"
@@ -98,17 +134,11 @@ def fix_test_failure(state: AgentState) -> dict:
         f"code or the test file, then fix the right file."
     )
 
-    llm = ChatGroq(
-        api_key=secrets.groq_api_key,
-        model="llama-3.3-70b-versatile",
-    )
-    structured_llm = llm.with_structured_output(FixPlanOutput)
-
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(content=user_message),
     ]
-    result = structured_llm.invoke(messages)
+    result = invoke_structured(FixPlanOutput, messages)
 
     logger.info(f"Fix plan: {result.explanation}")
     for edit in result.edits:

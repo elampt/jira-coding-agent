@@ -88,6 +88,17 @@ def create_branch(repo_path: Path, issue_key: str) -> str:
     return branch_name
 
 
+def discard_tracked_changes(repo_path: Path) -> None:
+    """Reset tracked files to HEAD, leaving untracked/ignored files (node_modules) alone.
+
+    `npm install` rewrites package-lock.json, and commit_changes() stages everything, so
+    without this the PR would carry thousands of lines of lockfile churn. Call it right
+    after install and before the agent edits anything.
+    """
+    Repo(repo_path).git.checkout("--", ".")
+    logger.info("Discarded tracked-file changes left by npm install")
+
+
 def commit_changes(repo_path: Path, issue_key: str, message: str) -> None:
     """Stage all changes and create a commit.
 
@@ -103,6 +114,20 @@ def commit_changes(repo_path: Path, issue_key: str, message: str) -> None:
     commit_message = f"{issue_key}: {message}"
     repo.index.commit(commit_message)
     logger.info(f"Committed: {commit_message}")
+
+
+def worktree_changed_files(repo_path: Path) -> list[str]:
+    """Files the agent has touched so far: modified tracked files plus new untracked ones."""
+    repo = Repo(repo_path)
+    modified = repo.git.diff("--name-only", "HEAD").splitlines()
+    untracked = repo.git.ls_files("--others", "--exclude-standard").splitlines()
+    return [p for p in modified + untracked if p]
+
+
+def files_in_last_commit(repo_path: Path) -> list[str]:
+    """Paths touched by the most recent commit — what the PR will actually contain."""
+    output = Repo(repo_path).git.diff("--name-only", "HEAD~1", "HEAD")
+    return [line for line in output.splitlines() if line]
 
 
 def push_branch(repo_path: Path, branch_name: str) -> None:

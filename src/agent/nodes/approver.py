@@ -14,13 +14,12 @@ understand the change at a glance instead of mentally diffing truncated strings.
 import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_groq import ChatGroq
 from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
 from src.agent.state import AgentState
-from src.config import secrets
 from src.integrations.jira_client import add_comment
+from src.llm import invoke_structured
 
 logger = logging.getLogger(__name__)
 
@@ -74,13 +73,12 @@ def _generate_summary(
         f"plus 2-4 specific risks the reviewer should watch for."
     )
 
-    llm = ChatGroq(api_key=secrets.groq_api_key, model="llama-3.3-70b-versatile")
-    structured_llm = llm.with_structured_output(ChangeSummary)
-    return structured_llm.invoke(  # pyright: ignore[reportReturnType]
+    return invoke_structured(
+        ChangeSummary,
         [
             SystemMessage(content=SUMMARY_SYSTEM_PROMPT),
             HumanMessage(content=user_message),
-        ]
+        ],
     )
 
 

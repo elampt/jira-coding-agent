@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 # The embedding model — runs locally, free, no API key needed
 # all-MiniLM-L6-v2 produces 384-dimensional vectors
 MODEL_NAME = config.embeddings.model
-INDEX_DIR = Path("data")
+INDEX_FILE = config.vector_store.index_file
+METADATA_FILE = config.vector_store.metadata_file
 
 
 def index_repo(repo_path: Path) -> None:
@@ -66,15 +67,15 @@ def index_repo(repo_path: Path) -> None:
     logger.info(f"FAISS index created with {index.ntotal} vectors")
 
     # Step 5: Save to disk
-    INDEX_DIR.mkdir(exist_ok=True)
+    INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-    faiss.write_index(index, str(INDEX_DIR / "codebase.index"))
-    logger.info(f"Saved FAISS index to {INDEX_DIR / 'codebase.index'}")
+    faiss.write_index(index, str(INDEX_FILE))
+    logger.info(f"Saved FAISS index to {INDEX_FILE}")
 
     # Save metadata — FAISS doesn't store text, only vectors
     # metadata[i] corresponds to the vector at index i in FAISS
     metadata = [{"path": c["path"], "content": c["content"]} for c in chunks]
-    with open(INDEX_DIR / "codebase_metadata.json", "w") as f:
+    with open(METADATA_FILE, "w") as f:
         json.dump(metadata, f, indent=2)
     logger.info(f"Saved metadata for {len(metadata)} chunks")
 

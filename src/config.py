@@ -33,6 +33,15 @@ class VectorStoreConfig(BaseModel):
     provider: str
     index_path: str
 
+    @property
+    def index_file(self) -> Path:
+        return Path(self.index_path)
+
+    @property
+    def metadata_file(self) -> Path:
+        """Sidecar JSON next to the FAISS index (FAISS stores only vectors)."""
+        return self.index_file.with_name("codebase_metadata.json")
+
 
 class TargetRepoConfig(BaseModel):
     url: str

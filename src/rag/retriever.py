@@ -12,7 +12,6 @@ so the SEARCH node can combine both seamlessly.
 
 import json
 import logging
-from pathlib import Path
 
 import faiss
 import numpy as np
@@ -22,7 +21,8 @@ from src.config import config
 
 logger = logging.getLogger(__name__)
 
-INDEX_DIR = Path("data")
+INDEX_FILE = config.vector_store.index_file
+METADATA_FILE = config.vector_store.metadata_file
 MODEL_NAME = config.embeddings.model
 
 
@@ -36,17 +36,14 @@ def retrieve_similar(query: str, top_k: int = 5) -> list[dict]:
     Returns list of:
         {"path": "src/App.js", "content": "...full file..."}
     """
-    index_path = INDEX_DIR / "codebase.index"
-    metadata_path = INDEX_DIR / "codebase_metadata.json"
-
     # Check if index exists
-    if not index_path.exists() or not metadata_path.exists():
+    if not INDEX_FILE.exists() or not METADATA_FILE.exists():
         logger.warning("FAISS index not found. Run indexer first: python -m src.rag.indexer")
         return []
 
     # Load FAISS index and metadata
-    index = faiss.read_index(str(index_path))
-    with open(metadata_path) as f:
+    index = faiss.read_index(str(INDEX_FILE))
+    with open(METADATA_FILE) as f:
         metadata = json.load(f)
 
     # Embed the query — same model used during indexing

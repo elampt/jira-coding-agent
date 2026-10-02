@@ -11,11 +11,10 @@ instead of free text, so we get typed, validated data automatically.
 import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
 
 from src.agent.state import AgentState
-from src.config import secrets
+from src.llm import invoke_structured
 
 logger = logging.getLogger(__name__)
 
@@ -67,19 +66,12 @@ def parse_ticket(state: AgentState) -> dict:
 
     logger.info(f"Parsing ticket: {summary}")
 
-    # Create the LLM with structured output
-    llm = ChatGroq(
-        api_key=secrets.groq_api_key,
-        model="llama-3.3-70b-versatile",
-    )
-    structured_llm = llm.with_structured_output(TicketPlanOutput)
-
     # Ask the LLM to parse the ticket
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(content=f"Summary: {summary}\n\nDescription: {description}"),
     ]
-    result = structured_llm.invoke(messages)
+    result = invoke_structured(TicketPlanOutput, messages)
 
     logger.info(
         f"Parsed: intent={result.intent}, hints={result.component_hints}, risk={result.risk_level}"
