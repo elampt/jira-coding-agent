@@ -119,15 +119,18 @@ flowchart TD
 | **Visual Verification** | Before/after screenshots via Playwright MCP, embedded in PR description |
 | **Human-in-the-Loop** | High-risk changes pause for approval; LLM-generated plan posted to Jira |
 | **LangFuse Observability** | Every LLM call traced — prompts, responses, latencies, token counts |
-| **Config-Driven** | Swap LLM provider, target repo, test commands via YAML — zero code changes |
+| **Config-Driven** | Swap the LLM model, target repo, test commands, and index location via YAML — zero code changes |
 | **Honest Failures** | Agent reports when it can't fix something instead of committing broken code |
+| **Fails Fast on Environment Problems** | If the tests can't run at all (e.g. `npm` missing), the agent says so on Jira instead of inventing "fixes" |
+| **Resilient LLM Calls** | Malformed model responses are retried; persistent failures surface as a short, readable Jira comment |
+| **Clean PRs** | Only the agent's real edits + screenshots are committed (npm's lockfile churn is discarded); the PR body is a plain-English summary plus the file list |
 
 ## Tech Stack
 
 | Layer | Tools |
 |-------|-------|
 | **Agent Framework** | LangGraph, LangChain |
-| **LLM** | Llama 3.3 70B via Groq (free) — config-swappable to Claude / GPT-4 |
+| **LLM** | `openai/gpt-oss-120b` via Groq (free tier) — model set in `config.yaml`; other providers need one branch in `src/llm.py` |
 | **Server** | FastAPI, uvicorn |
 | **Package Manager** | UV (modern Rust-based, replaces pip + venv) |
 | **Code Quality** | Ruff (lint + format), PyRight (static type checking) |
@@ -240,8 +243,13 @@ jira-coding-agent/
 │   │   └── dev_server.py           # Start/stop React dev server for screenshots
 │   │
 │   ├── config.py                   # Load config.yaml + .env secrets
+│   ├── llm.py                      # LLM factory (get_llm) + retrying structured-output helper
 │   └── observability.py            # LangFuse callback handler
 │
+├── scripts/
+│   └── demo_local.py               # Run the agent graph locally — no Jira, ngrok, or GitHub needed
+│
+├── CLAUDE.md                       # Architecture notes + commands for AI coding assistants
 ├── config.yaml                     # Project settings (LLM, repo, commands)
 ├── pyproject.toml                  # Project metadata + dependencies (PEP 621)
 ├── uv.lock                         # Pinned dependency versions (reproducible builds)
@@ -285,6 +293,10 @@ Fixer reads error + current files from disk → generates fix → applies → re
     ↓ (max 3 retries)
 Pass → PR created  |  Still failing → "needs human review" comment on Jira
 ```
+
+The fixer is shown the files named in the failure output, the files the agent already edited, and the files search found (searched recursively, within a ~4K-token budget) — not the whole repo.
+
+If the tests can't run at all (`npm` missing, `react-scripts` not installed), that is an environment problem, not a code problem. The fixer is skipped and the agent posts a clear comment on Jira instead of burning its retries on edits that can't help.
 
 ## Setup
 
@@ -407,6 +419,19 @@ curl http://localhost:8000/health
 tail -f /tmp/server.log
 ```
 
+> **Node must be on the server's PATH.** The agent shells out to `npm install`, `npm test` and `npm start`. If you use nvm, make sure the terminal that runs uvicorn has loaded it (or `export PATH` to your Node `bin` directory) — otherwise every ticket fails with `Command not found: npm`.
+
+### Try It Without Jira
+
+`scripts/demo_local.py` drives the LangGraph agent directly against a repo already on disk — no Jira, ngrok, GitHub, clone, or `npm install`:
+
+```bash
+python -m scripts.demo_local                        # run the default ticket
+python -m scripts.demo_local --reset                # git checkout -- . in the target repo first
+python -m scripts.demo_local --summary "..." --description "..."
+python -m scripts.demo_local --resume approved      # continue a paused (high-risk) run
+```
+
 ### Create a Test Ticket
 
 Create a Jira ticket and watch the agent work:
@@ -430,14 +455,18 @@ Within 2-3 minutes:
 | Fewer, larger edits | 7 small dependent edits break easily. One function-body replacement is atomic |
 | Playwright via MCP | Anthropic's standardized tool protocol — same interface pattern for any external tool |
 | Human-in-the-loop via Jira | Reuse existing webhook. No extra tools. Human stays where they already work |
-| Config-driven | Swap LLM provider with one line. Same agent works on any React repo |
+| Config-driven | Every node gets its LLM from one factory (`src/llm.py`) that reads `config.yaml`, so changing the model is a one-line edit. Same agent works on any React repo |
+| Fail fast on environment errors | A missing `npm` is not something an LLM can fix — retrying it only produces random edits |
 | Honest failures | Agent stops and reports after 3 failed fix attempts. Never commits broken code |
 
 ## Known Limitations
 
 | Limitation | Mitigation |
 |-----------|------------|
-| Llama 3.3 struggles with complex refactors | Config-swappable to Claude/GPT-4 for complex tickets |
+| Open models struggle with complex refactors | Risk-based approval gate + self-heal loop; the model is set in `config.yaml` (a different provider needs one branch in `src/llm.py`) |
+| Only the Groq provider is implemented | `get_llm()` raises a clear error for anything else, rather than silently ignoring `llm.provider` |
+| `jira.auto_approve_risk_levels` in `config.yaml` is not wired up | The graph pauses for approval only on `high` risk; medium proceeds automatically |
+| Fixer context is budgeted (~4K tokens) | Prioritises files from the failure output, then edited files, then search results — suits Groq's free-tier token limits |
 | No npm install for new dependencies | Planner prompt restricts imports to existing packages |
 | Port 3000 collision on concurrent tickets | Sequential processing; dynamic ports for production |
 | In-memory session store | Lost on restart; use SQLite for production |
