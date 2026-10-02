@@ -62,11 +62,16 @@ def should_retry_or_end(state: AgentState) -> str:
     """Conditional edge after TEST node.
 
     - Tests passed → END (success!)
+    - Tests couldn't run (environment problem) → END — the fixer would only invent edits
     - Tests failed + retries left → fix
     - Tests failed + no retries left → END (give up)
     """
     if state.get("test_passed", False):
         logger.info("Tests passed — done!")
+        return "end"
+
+    if state.get("environment_failure", False):
+        logger.error("Tests could not run (environment problem) — skipping fixer")
         return "end"
 
     retry_count = state.get("retry_count", 0)

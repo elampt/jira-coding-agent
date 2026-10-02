@@ -28,11 +28,15 @@ logger = logging.getLogger(__name__)
 MAX_OUTPUT_CHARS = 3000
 
 
-def _run_command(command: str, cwd: Path) -> tuple[int, str]:
-    """Run a shell command and return (exit_code, output).
+def _run_command(command: str, cwd: Path) -> tuple[int, str, bool]:
+    """Run a shell command and return (exit_code, output, environment_failure).
 
     Combines stdout + stderr into one string — some tools write
     errors to stdout, others to stderr, so we capture both.
+
+    environment_failure is True when the command couldn't run because of the machine, not the
+    code (binary missing from PATH, or a tool like react-scripts missing from node_modules).
+    A timeout is NOT counted: an agent edit can cause an infinite loop, which the fixer can fix.
     """
     try:
         result = subprocess.run(
@@ -46,12 +50,13 @@ def _run_command(command: str, cwd: Path) -> tuple[int, str]:
             # This is an alternative to --watchAll=false
         )
         output = result.stdout + "\n" + result.stderr
-        return result.returncode, output.strip()
+        missing_tool = result.returncode != 0 and "command not found" in output.lower()
+        return result.returncode, output.strip(), missing_tool
 
     except subprocess.TimeoutExpired:
-        return 1, "ERROR: Tests timed out after 120 seconds"
+        return 1, "ERROR: Tests timed out after 120 seconds", False
     except FileNotFoundError:
-        return 1, f"ERROR: Command not found: {command.split()[0]}"
+        return 1, f"ERROR: Command not found: {command.split()[0]}", True
 
 
 def run_tests(state: AgentState) -> dict:
@@ -69,7 +74,7 @@ def run_tests(state: AgentState) -> dict:
     logger.info(f"Running tests: {test_command}")
 
     # Run tests
-    exit_code, output = _run_command(test_command, repo_path)
+    exit_code, output, environment_failure = _run_command(test_command, repo_path)
 
     # Keep only the last N chars — the actual error is usually at the end
     trimmed_output = output[-MAX_OUTPUT_CHARS:] if len(output) > MAX_OUTPUT_CHARS else output
@@ -79,6 +84,7 @@ def run_tests(state: AgentState) -> dict:
         return {
             "test_passed": True,
             "test_output": trimmed_output,
+            "environment_failure": False,
         }
     else:
         logger.warning(f"Tests FAILED (exit code {exit_code})")
@@ -86,4 +92,5 @@ def run_tests(state: AgentState) -> dict:
         return {
             "test_passed": False,
             "test_output": trimmed_output,
+            "environment_failure": environment_failure,
         }

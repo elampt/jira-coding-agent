@@ -23,7 +23,14 @@ from langgraph.types import Command
 
 from src.agent.graph import agent
 from src.agent.nodes.screenshotter import _capture_screenshot
-from src.integrations.git_ops import clone_repo, commit_changes, create_branch, push_branch
+from src.integrations.git_ops import (
+    clone_repo,
+    commit_changes,
+    create_branch,
+    discard_tracked_changes,
+    files_in_last_commit,
+    push_branch,
+)
 from src.integrations.github_client import create_pull_request
 from src.integrations.jira_client import add_comment, update_status
 from src.observability import langfuse_handler
@@ -32,6 +39,10 @@ from src.server.models import JiraWebhookPayload
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Folder inside the target repo where before/after screenshots are committed, so the PR body
+# can link them via raw.githubusercontent-style URLs. Must match everywhere it's used below.
+SCREENSHOT_DIR_IN_REPO = "agent-screenshots"
 
 app = FastAPI(title="Jira Coding Agent")
 
@@ -70,7 +81,7 @@ def _finalize(issue_key: str, result: dict) -> None:
     description = session["description"]
     before_path = Path(session["before_path"])
 
-    changes_made = result.get("changes_made", [])
+    plan_summary = result.get("plan_summary", "")
     test_passed = result.get("test_passed", False)
     retry_count = result.get("retry_count", 0)
     approval_status = result.get("approval_status", "")
@@ -86,11 +97,24 @@ def _finalize(issue_key: str, result: dict) -> None:
         _session_store.pop(issue_key, None)
         return
 
+    # Tests couldn't run at all — a server/environment problem, not something the agent can fix.
+    # Leave the ticket's status alone: a human needs to fix the environment and re-trigger.
+    if result.get("environment_failure"):
+        add_comment(
+            issue_key,
+            "🤖 I couldn't run the test suite — this is a problem with the agent's environment "
+            "(e.g. npm not installed or not on PATH), not with the code change. "
+            f"No fix was attempted.\n\nDetails:\n```\n{result.get('test_output', '')[-300:]}\n```",
+        )
+        logger.error(f"Environment failure for {issue_key} — commented on Jira, no PR created")
+        _session_store.pop(issue_key, None)
+        return
+
     # If tests still fail after all retries, stop
     if not test_passed:
         add_comment(
             issue_key,
-            f"Agent made changes but tests are still failing after {retry_count} fix attempts. "
+            f"🤖 Agent made changes but tests are still failing after {retry_count} fix attempts. "
             f"Needs human review.\n\nTest output:\n```\n{result.get('test_output', '')[-500:]}\n```",
         )
         try:
@@ -102,7 +126,7 @@ def _finalize(issue_key: str, result: dict) -> None:
         return
 
     # Take "after" screenshot — saved directly in the repo (same folder as "before")
-    after_path = repo_path / "agent-screenshots" / "after.png"
+    after_path = repo_path / SCREENSHOT_DIR_IN_REPO / "after.png"
     _capture_screenshot(repo_path, after_path, "AFTER")
 
     # Commit + push + PR
@@ -115,9 +139,14 @@ def _finalize(issue_key: str, result: dict) -> None:
     from src.integrations.github_client import _get_repo_full_name
 
     repo_full_name = _get_repo_full_name()
-    raw_base = f"https://github.com/{repo_full_name}/raw/{branch_name}/agent-screenshots"
+    raw_base = f"https://github.com/{repo_full_name}/raw/{branch_name}/{SCREENSHOT_DIR_IN_REPO}"
 
-    changes_list = "\n".join(f"- {c}" for c in changes_made) if changes_made else "No changes made"
+    # Files come from git (what the PR really contains), not the plan — the fixer overwrites
+    # edit_plan on retries, so the plan alone would under-report. Screenshots are listed separately.
+    changed_files = [
+        f for f in files_in_last_commit(repo_path) if not f.startswith(SCREENSHOT_DIR_IN_REPO)
+    ]
+    files_list = "\n".join(f"- `{f}`" for f in changed_files) or "- (none)"
     test_info = "All tests passing"
     if retry_count > 0:
         test_info += f" (fixed after {retry_count} retry attempts)"
@@ -131,7 +160,8 @@ def _finalize(issue_key: str, result: dict) -> None:
     pr_body = (
         f"## {issue_key}: {summary}\n\n"
         f"**Description:** {description or 'No description provided.'}\n\n"
-        f"### Changes Made\n{changes_list}\n\n"
+        f"### Summary\n{plan_summary or summary}\n\n"
+        f"### Files Changed\n{files_list}\n\n"
         f"### Test Results\n{test_info}\n\n"
     )
     if screenshot_info:
@@ -143,7 +173,7 @@ def _finalize(issue_key: str, result: dict) -> None:
         title=f"{issue_key}: {summary}",
         body=pr_body,
     )
-    add_comment(issue_key, f"PR created: {pr_url}")
+    add_comment(issue_key, f"🤖 PR created: {pr_url}")
 
     # Move to "In Review" — human now needs to review & merge the PR
     try:
@@ -176,12 +206,13 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
 
         logger.info("Installing npm dependencies...")
         subprocess.run(["npm", "install"], cwd=str(repo_path), capture_output=True, timeout=120)
+        discard_tracked_changes(repo_path)
 
         index_repo(repo_path)
 
         # Take "before" screenshot — saved directly inside the cloned repo
         # so it gets committed with the PR branch (no separate copy step)
-        screenshots_in_repo = repo_path / "agent-screenshots"
+        screenshots_in_repo = repo_path / SCREENSHOT_DIR_IN_REPO
         screenshots_in_repo.mkdir(exist_ok=True)
         before_path = screenshots_in_repo / "before.png"
         _capture_screenshot(repo_path, before_path, "BEFORE")
@@ -231,7 +262,7 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
     except Exception as e:
         logger.error(f"Pipeline failed for {issue_key}: {e}", exc_info=True)
         try:
-            add_comment(issue_key, f"Agent failed: {str(e)}")
+            add_comment(issue_key, f"🤖 Agent failed: {str(e)}")
         except Exception:
             logger.error(f"Could not comment failure on {issue_key}")
         _session_store.pop(issue_key, None)
@@ -245,15 +276,16 @@ def process_comment(issue_key: str, comment_body: str):
     """
     logger.info(f"Comment on {issue_key}: {comment_body}")
 
+    # Skip agent's own comments — every comment the agent posts starts with "🤖".
+    # The agent posts as the same Jira user as the human, so this prefix is the only way to tell
+    # them apart. Checked first so our own comments never race with session cleanup.
+    if comment_body.lstrip().startswith("🤖"):
+        logger.info("Skipping agent's own comment")
+        return
+
     # Only care about comments if we have a paused session
     if issue_key not in _session_store:
         logger.info(f"No paused session for {issue_key} — ignoring comment")
-        return
-
-    # Skip agent's own comments — they all start with "🤖"
-    # Without this, the agent's own "Reply with `approve`" message would trigger a resume
-    if comment_body.lstrip().startswith("🤖"):
-        logger.info("Skipping agent's own comment")
         return
 
     # Detect intent — be strict to avoid false positives.
@@ -281,7 +313,7 @@ def process_comment(issue_key: str, comment_body: str):
     except Exception as e:
         logger.error(f"Resume failed for {issue_key}: {e}", exc_info=True)
         try:
-            add_comment(issue_key, f"Agent failed while resuming: {str(e)}")
+            add_comment(issue_key, f"🤖 Agent failed while resuming: {str(e)}")
         except Exception:
             pass
         _session_store.pop(issue_key, None)
