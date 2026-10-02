@@ -34,14 +34,24 @@ def grep_codebase(repo_path: Path, keyword: str) -> set[str]:
 
     Uses subprocess to run grep — faster than reading every file in Python.
     -r = recursive, -l = only print file names (not matching lines),
-    --include = only search these file types.
+    --include = only search these file types, --exclude-dir = skip SKIP_DIRS (the RAG chunker
+    skips the same folders, so both halves of the search agree on what counts as source).
     """
     matching_files = set()
+    exclude_dirs = [f"--exclude-dir={d}" for d in sorted(SKIP_DIRS)]
 
     for ext in SEARCH_EXTENSIONS:
         try:
             result = subprocess.run(
-                ["grep", "-rl", "--include", f"*{ext}", keyword, str(repo_path / "src")],
+                [
+                    "grep",
+                    "-rl",
+                    *exclude_dirs,
+                    "--include",
+                    f"*{ext}",
+                    keyword,
+                    str(repo_path / "src"),
+                ],
                 capture_output=True,
                 text=True,
             )
