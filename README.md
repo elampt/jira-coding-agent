@@ -234,6 +234,7 @@ jira-coding-agent/
 │   │
 │   ├── rag/
 │   │   ├── chunker.py              # Split codebase into embeddable chunks
+│   │   ├── embedder.py             # Embedding model, loaded once per process and shared
 │   │   ├── indexer.py              # Embed chunks → FAISS index
 │   │   └── retriever.py            # Query FAISS for similar code
 │   │

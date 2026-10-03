@@ -15,15 +15,14 @@ import logging
 
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 from src.config import config
+from src.rag.embedder import get_embedding_model
 
 logger = logging.getLogger(__name__)
 
 INDEX_FILE = config.vector_store.index_file
 METADATA_FILE = config.vector_store.metadata_file
-MODEL_NAME = config.embeddings.model
 
 
 def retrieve_similar(query: str, top_k: int = 5) -> list[dict]:
@@ -47,7 +46,7 @@ def retrieve_similar(query: str, top_k: int = 5) -> list[dict]:
         metadata = json.load(f)
 
     # Embed the query — same model used during indexing
-    model = SentenceTransformer(MODEL_NAME)
+    model = get_embedding_model()
     query_vector = model.encode([query])
     # Shape: (1, 384) — one query, 384 dimensions
 

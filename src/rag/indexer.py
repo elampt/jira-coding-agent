@@ -19,16 +19,15 @@ from pathlib import Path
 
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 from src.config import config
 from src.rag.chunker import chunk_codebase
+from src.rag.embedder import get_embedding_model
 
 logger = logging.getLogger(__name__)
 
-# The embedding model — runs locally, free, no API key needed
+# The embedding model (src/rag/embedder.py) runs locally, free, no API key needed;
 # all-MiniLM-L6-v2 produces 384-dimensional vectors
-MODEL_NAME = config.embeddings.model
 INDEX_FILE = config.vector_store.index_file
 METADATA_FILE = config.vector_store.metadata_file
 
@@ -47,8 +46,7 @@ def index_repo(repo_path: Path) -> None:
         return
 
     # Step 2: Load the embedding model (downloads on first run, ~80MB)
-    logger.info(f"Loading embedding model: {MODEL_NAME}")
-    model = SentenceTransformer(MODEL_NAME)
+    model = get_embedding_model()
 
     # Step 3: Embed all chunks
     embed_texts = [chunk["embed_text"] for chunk in chunks]
