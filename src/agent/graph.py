@@ -4,7 +4,7 @@ LangGraph agent — wires all nodes into a state machine.
 Phase 6 flow:
   START → parse → search → plan → (risk check)
                                     │
-                                    ├── low/medium → write → test → END
+                                    ├── auto-approved risk (config) → write → test → END
                                     │                        └── fail → fix → write → test (self-heal, max 3)
                                     │
                                     └── high → wait_approval → (response check)
@@ -26,6 +26,7 @@ from src.agent.nodes.searcher import search_codebase
 from src.agent.nodes.tester import run_tests
 from src.agent.nodes.writer import apply_changes
 from src.agent.state import AgentState
+from src.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -35,14 +36,16 @@ MAX_RETRIES = 3
 def should_wait_for_approval(state: AgentState) -> str:
     """Conditional edge after PLAN node.
 
-    High-risk changes require human approval. Others proceed directly.
+    Only risk levels listed in config.yaml's jira.auto_approve_risk_levels proceed without a
+    human. Anything else — including an unrecognised value — pauses for approval, so a typo or
+    a new risk level from the LLM fails safe.
     """
-    risk = state["ticket_plan"].get("risk_level", "low")
-    if risk == "high":
-        logger.info("High-risk change — routing to approval")
-        return "wait_approval"
-    logger.info(f"{risk.capitalize()}-risk change — proceeding automatically")
-    return "write"
+    risk = str(state["ticket_plan"].get("risk_level", "low")).strip().lower()
+    if risk in {level.lower() for level in config.jira.auto_approve_risk_levels}:
+        logger.info(f"{risk.capitalize()}-risk change — auto-approved by config, proceeding")
+        return "write"
+    logger.info(f"{risk.capitalize()}-risk change — routing to approval")
+    return "wait_approval"
 
 
 def should_proceed_after_approval(state: AgentState) -> str:

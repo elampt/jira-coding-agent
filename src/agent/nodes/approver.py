@@ -120,7 +120,8 @@ def _format_jira_comment(
         )
 
     return (
-        f"🤖 *AGENT PAUSED — High Risk Change*\n\n"
+        f"🤖 *AGENT PAUSED — {str(ticket_plan.get('risk_level', 'unknown')).capitalize()} "
+        f"Risk Change*\n\n"
         f"📝 *What I'm planning to do:*\n"
         f"{summary_obj.summary}\n\n"
         f"⚠️ *Risk Concerns:*\n"
@@ -154,7 +155,10 @@ def wait_for_approval(state: AgentState) -> dict:
         summary = state["summary"]
         description = state.get("description", "")
 
-        logger.info(f"PAUSING for human approval on {issue_key} (HIGH RISK)")
+        logger.info(
+            f"PAUSING for human approval on {issue_key} "
+            f"(risk: {ticket_plan.get('risk_level', 'unknown')})"
+        )
 
         # Generate plain-English summary using LLM
         logger.info("Generating change summary for human review...")
