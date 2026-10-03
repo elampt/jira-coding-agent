@@ -19,9 +19,17 @@ from pydantic_settings import BaseSettings
 # --- Structured config from config.yaml ---
 
 
+class TokenPrice(BaseModel):
+    """List price in USD per 1M tokens, used only for cost estimates in reports."""
+
+    input: float
+    output: float
+
+
 class LLMConfig(BaseModel):
     provider: str
     model: str
+    price_per_million_tokens: TokenPrice | None = None
 
 
 class EmbeddingsConfig(BaseModel):

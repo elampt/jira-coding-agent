@@ -495,6 +495,10 @@ Every agent run is traced in LangFuse:
 - Self-heal retries visible as repeated fix → write → test branches
 - Human-in-the-loop pauses shown as interrupted nodes
 
+**Labels and outcomes.** Each run is named `jira-agent-run` with the ticket key as its *session* (a paused ticket and its resumed half share one), tagged with the environment (`prod` for real tickets, `eval` for harness runs) and the model. When a run ends, the ticket's session gets two categorical scores: `outcome` (`success`, `awaiting_approval`, `rejected`, `tests_failing`, `environment_failure`, `error`) and `risk_level`, so you can filter the LangFuse dashboard by how runs ended.
+
+**Summary report.** `make report` (or `python -m scripts.trace_report`) reads recent traces from LangFuse and prints per-step latency (median, p95, max), average tokens per step, tokens and estimated cost per ticket (at the list price in `config.yaml`; the free tier is not actually billed), and an outcome-by-risk table. Use `--env prod` / `--env eval` to separate real tickets from harness runs (`make evals ARGS=--trace` sends harness runs to LangFuse).
+
 ## Inspired By
 
 | Project | What We Learned |

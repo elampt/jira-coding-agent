@@ -1,6 +1,10 @@
 llm:
   provider: "groq"
   model: "openai/gpt-oss-120b"
+  # USD per 1M tokens at Groq's list price (free tier = no charge). Used only for cost estimates.
+  price_per_million_tokens:
+    input: 0.15
+    output: 0.60
 
 embeddings:
   provider: "local"

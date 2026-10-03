@@ -33,7 +33,17 @@ from src.integrations.git_ops import (
 )
 from src.integrations.github_client import create_pull_request
 from src.integrations.jira_client import add_comment, update_status
-from src.observability import langfuse_handler
+from src.observability import (
+    OUTCOME_AWAITING_APPROVAL,
+    OUTCOME_ENVIRONMENT_FAILURE,
+    OUTCOME_ERROR,
+    OUTCOME_REJECTED,
+    OUTCOME_SUCCESS,
+    OUTCOME_TESTS_FAILING,
+    langfuse_handler,
+    record_run_outcome,
+    trace_metadata,
+)
 from src.rag.indexer import index_repo
 from src.server.models import JiraWebhookPayload
 
@@ -62,6 +72,7 @@ def _agent_config(issue_key: str) -> dict:
     config = {"configurable": {"thread_id": issue_key}}
     if langfuse_handler is not None:
         config["callbacks"] = [langfuse_handler]
+        config["metadata"] = trace_metadata(issue_key)
     return config
 
 
@@ -85,10 +96,12 @@ def _finalize(issue_key: str, result: dict) -> None:
     test_passed = result.get("test_passed", False)
     retry_count = result.get("retry_count", 0)
     approval_status = result.get("approval_status", "")
+    risk = result.get("ticket_plan", {}).get("risk_level")
 
     # If the human rejected, stop here
     if approval_status == "rejected":
         add_comment(issue_key, "🤖 Task cancelled by user.")
+        record_run_outcome(issue_key, OUTCOME_REJECTED, risk)
         try:
             update_status(issue_key, "Done")
         except Exception as e:
@@ -107,6 +120,7 @@ def _finalize(issue_key: str, result: dict) -> None:
             f"No fix was attempted.\n\nDetails:\n```\n{result.get('test_output', '')[-300:]}\n```",
         )
         logger.error(f"Environment failure for {issue_key} — commented on Jira, no PR created")
+        record_run_outcome(issue_key, OUTCOME_ENVIRONMENT_FAILURE, risk)
         _session_store.pop(issue_key, None)
         return
 
@@ -122,6 +136,7 @@ def _finalize(issue_key: str, result: dict) -> None:
         except Exception as e:
             logger.warning(f"Could not update status to Done: {e}")
         logger.warning(f"Tests still failing for {issue_key} — commented on Jira")
+        record_run_outcome(issue_key, OUTCOME_TESTS_FAILING, risk)
         _session_store.pop(issue_key, None)
         return
 
@@ -182,6 +197,7 @@ def _finalize(issue_key: str, result: dict) -> None:
         logger.warning(f"Could not update status to In Review: {e}")
 
     logger.info(f"Pipeline complete for {issue_key}: {pr_url}")
+    record_run_outcome(issue_key, OUTCOME_SUCCESS, risk)
 
     # Cleanup session
     _session_store.pop(issue_key, None)
@@ -249,6 +265,11 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
             logger.info(
                 f"Agent paused on {issue_key} at node {state_snapshot.next} — waiting for human reply"
             )
+            record_run_outcome(
+                issue_key,
+                OUTCOME_AWAITING_APPROVAL,
+                result.get("ticket_plan", {}).get("risk_level"),
+            )
             # Move to "In Review" — agent posted plan, waiting for human approve/reject
             try:
                 update_status(issue_key, "In Review")
@@ -261,6 +282,7 @@ def process_new_ticket(issue_key: str, summary: str, description: str | None):
 
     except Exception as e:
         logger.error(f"Pipeline failed for {issue_key}: {e}", exc_info=True)
+        record_run_outcome(issue_key, OUTCOME_ERROR)
         try:
             add_comment(issue_key, f"🤖 Agent failed: {str(e)}")
         except Exception:
@@ -312,6 +334,7 @@ def process_comment(issue_key: str, comment_body: str):
 
     except Exception as e:
         logger.error(f"Resume failed for {issue_key}: {e}", exc_info=True)
+        record_run_outcome(issue_key, OUTCOME_ERROR)
         try:
             add_comment(issue_key, f"🤖 Agent failed while resuming: {str(e)}")
         except Exception:

@@ -191,13 +191,22 @@ def _case_patches(case: dict, index_dir: Path) -> list:
 # ---------------------------------------------------------------- one run of one case
 
 
-def run_once(case: dict, repeat_index: int, node_modules: Path, keep: bool) -> dict:
+def run_once(
+    case: dict, repeat_index: int, node_modules: Path, keep: bool, trace: bool = False
+) -> dict:
     issue = f"EVAL-{case['id']}-{repeat_index}-{uuid.uuid4().hex[:6]}"
     repo = make_workdir(case, node_modules)
     index_dir = repo.parent / "index"
     index_dir.mkdir()
     usage = UsageCounter()
     run_config = {"configurable": {"thread_id": issue}, "callbacks": [usage]}
+    if trace:
+        from src.observability import langfuse_handler, trace_metadata
+
+        if langfuse_handler is None:
+            sys.exit("--trace needs LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY in .env")
+        run_config["callbacks"].append(langfuse_handler)
+        run_config["metadata"] = trace_metadata(issue, "eval", (f"case:{case['id']}",))
     inputs = {
         "issue_key": issue,
         "summary": case["ticket"]["summary"],
@@ -243,6 +252,18 @@ def run_once(case: dict, repeat_index: int, node_modules: Path, keep: bool) -> d
         diff=_final_diff(repo),
         log=capture.lines[-60:],
     )
+
+    if trace:
+        from src.observability import classify_outcome, record_run_outcome
+
+        outcome = classify_outcome(
+            error=observed["error"] != "none",
+            paused=observed["paused_first"] and not case.get("resume"),
+            approval_status=observed["approval_status"],
+            environment_failure=observed["environment_failure"],
+            tests_passed=observed["tests_passed"],
+        )
+        record_run_outcome(issue, outcome, (state.get("ticket_plan") or {}).get("risk_level"))
 
     failures = evaluate(case["expect"], observed, repo)
     result = {"repeat": repeat_index, "passed": not failures, "failures": failures, **observed}
@@ -354,6 +375,9 @@ def main() -> int:
     parser.add_argument("--repeat", type=int, default=1, help="runs per case (LLM output varies)")
     parser.add_argument("--list", action="store_true", help="list cases and exit")
     parser.add_argument(
+        "--trace", action="store_true", help="send each run's trace to LangFuse, tagged 'eval'"
+    )
+    parser.add_argument(
         "--keep", action="store_true", help="keep each run's temp folder for debugging"
     )
     args = parser.parse_args()
@@ -380,7 +404,7 @@ def main() -> int:
     for case in cases:
         runs = []
         for i in range(1, args.repeat + 1):
-            result = run_once(case, i, node_modules, args.keep)
+            result = run_once(case, i, node_modules, args.keep, args.trace)
             runs.append(result)
             print(
                 f"  {case['id']} #{i}: {'PASS' if result['passed'] else 'FAIL'} "
@@ -399,6 +423,11 @@ def main() -> int:
                 "runs": runs,
             }
         )
+
+    if args.trace:
+        from langfuse import get_client
+
+        get_client().flush()  # traces are sent in the background; make sure they leave before exit
 
     RESULTS.mkdir(exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
