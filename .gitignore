@@ -28,3 +28,6 @@ LEARNING_JOURNAL.md
 # Eval harness: cached node_modules and per-run result files (the fixture itself IS committed)
 evals/.cache/
 evals/results/*.json
+
+# Saved LangFuse reports (make report ARGS=--save)
+reports/

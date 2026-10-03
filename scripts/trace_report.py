@@ -12,20 +12,24 @@ config.yaml (llm.price_per_million_tokens); the free tier is not actually billed
 
 import argparse
 import base64
+import contextlib
+import io
 import json
 import math
 import os
 import statistics
+import subprocess
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+REPORTS = ROOT / "reports"
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
 for _line in (ROOT / ".env").read_text().splitlines():
@@ -196,6 +200,16 @@ def analyse(data: dict) -> dict:
     }
 
 
+def git_version() -> str:
+    def out(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=ROOT, capture_output=True, text=True
+        ).stdout.strip()
+
+    dirty = "+uncommitted" if out("status", "--porcelain", "--", "src", "evals", "scripts") else ""
+    return out("rev-parse", "--short", "HEAD") + dirty
+
+
 # ---------------------------------------------------------------- output
 
 
@@ -265,11 +279,29 @@ def main() -> None:
     parser.add_argument(
         "--limit", type=int, default=30, help="most recent traces to read (max 100)"
     )
+    parser.add_argument(
+        "--save",
+        action="store_true",
+        help="also write the report to reports/trace_report_<time>_<env>.txt",
+    )
     args = parser.parse_args()
 
     client = LangFuse()
     data = collect(client, args.env, args.limit)
-    print_report(data, analyse(data), args.env)
+
+    now = datetime.now(timezone.utc)
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        print(f"generated {now:%Y-%m-%d %H:%M} UTC   code {git_version()}")
+        print_report(data, analyse(data), args.env)
+    text = buffer.getvalue()
+    print(text, end="")
+
+    if args.save:
+        REPORTS.mkdir(exist_ok=True)
+        path = REPORTS / f"trace_report_{now:%Y-%m-%d_%H%M}_{args.env}.txt"
+        path.write_text(text)
+        print(f"\nsaved {path.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":
