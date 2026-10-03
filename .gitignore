@@ -24,3 +24,7 @@ LEARNING_JOURNAL.md
 
 # Playwright MCP debug artifacts
 .playwright-mcp/
+
+# Eval harness: cached node_modules and per-run result files (the fixture itself IS committed)
+evals/.cache/
+evals/results/*.json

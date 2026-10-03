@@ -15,6 +15,7 @@ make lint          # uv run ruff check src/
 make format        # uv run ruff format src/ && ruff check src/ --fix
 make type-check    # uv run pyright src/
 make check         # lint + type-check — run before committing
+make evals         # run the eval harness (ARGS="--repeat 3"); see evals/README.md
 make clean         # rm -rf workspace/ data/ screenshots/
 ```
 
@@ -52,9 +53,9 @@ Nodes live in `src/agent/nodes/`, one file per node, wired into a `StateGraph(Ag
 
 ```
 parse → search → plan → (risk check)
-                          ├─ low/medium → write → test → END
+                          ├─ auto-approved risk (config.yaml, default: low) → write → test → END
                           │                        └─ fail (retry<3) → fix → write → test
-                          └─ high → wait_approval → (human response)
+                          └─ any other risk (medium, high, unknown) → wait_approval → (human response)
                                         ├─ approved → write → test → END
                                         └─ rejected → END
 ```
@@ -72,6 +73,9 @@ All nodes read/write a shared `AgentState` TypedDict and return **partial** upda
 ### RAG pipeline (`src/rag/`)
 `chunker.py` splits the target repo into embeddable chunks → `indexer.py` embeds them with `sentence-transformers` (model from `config.yaml`, CPU-only) and writes a FAISS index to `data/codebase.index` + a sidecar `data/codebase_metadata.json` (chunk metadata, since FAISS itself only stores vectors) → `retriever.py` embeds the query and does nearest-neighbor lookup, returning `{path, content}` dicts in the same shape as grep results so `searcher.py` can merge both. The index must be (re)built per target repo/ticket run — see `index_repo()` call in `process_new_ticket()` and `scripts/demo_local.py`.
 
+### Eval harness (`evals/`)
+`python -m evals.run` runs the real agent graph on cases from `evals/cases.yaml` against a pinned fixture app (`evals/fixtures/react-app`), with Jira stubbed and a temp search index. Cases check outcomes (files changed, tests passing, paused or not, error type, model-call count), not the model's path. Results are saved to `evals/results/*.json` (git-ignored) with the model and git version, each run includes the agent's log lines and final diff, and the table flags regressions against the previous run. A run that reaches the model costs ~2.4K–5K tokens; keep Groq's free-tier limits (8K tokens/minute, ~200K/day) in mind — the runner paces itself. When adding behavior to the agent, add or update a case.
+
 ### LLM access (`src/llm.py`)
 Nodes never construct a chat client themselves. `get_llm()` builds it from `config.llm` (only the `groq` provider is implemented; anything else raises a clear error), and `invoke_structured(Schema, messages)` is what the parser, planner, fixer and approver call. It retries Groq's intermittent `tool_use_failed`/`json_validate_failed` 400s (the model emitting a malformed or unregistered tool call — seen with `gpt-oss-120b`) up to 3 times, then raises `LLMCallError` with a short message suitable for a Jira comment. Rate limits and 5xx errors are already retried by the Groq SDK. To change the model, edit `llm.model` in `config.yaml` — and check it still exists on your Groq account first (`llama-3.3-70b-versatile` disappeared from the free tier, which is why the project now uses `openai/gpt-oss-120b`).
 
@@ -82,7 +86,7 @@ Thin wrappers, one per external system: `jira_client.py` (read tickets, add comm
 Visual verification uses the Playwright MCP server (not a direct Playwright dependency) to control a browser against the target repo's dev server (`src/tools/dev_server.py` starts/stops it). `_capture_screenshot()` is called directly from `app.py` (before/after), outside the LangGraph node graph itself.
 
 ### Config split (`src/config.py`)
-`config.yaml` (committed, no secrets — LLM/embeddings/vector-store choice, target repo URL + test/lint/dev-server commands, Jira project key + auto-approve risk levels, screenshot dir) vs `.env` (gitignored secrets — API keys) are loaded into separate Pydantic models (`AppConfig`, `EnvSecrets`) and exposed as module-level singletons `config`/`secrets`, imported directly (`from src.config import config`) rather than passed around. To point the agent at a different target repo, change the LLM model, or move the FAISS index, edit `config.yaml` — no code changes needed (LLM: `src/llm.py`; index: `config.vector_store.index_file`/`metadata_file`). Two fields are loaded but **not yet used by any code**: `jira.auto_approve_risk_levels` (the graph pauses only when risk is `high`, so medium proceeds automatically regardless of this setting) and `jira.project_key` (the webhook does not filter by project).
+`config.yaml` (committed, no secrets — LLM/embeddings/vector-store choice, target repo URL + test/lint/dev-server commands, Jira project key + auto-approve risk levels, screenshot dir) vs `.env` (gitignored secrets — API keys) are loaded into separate Pydantic models (`AppConfig`, `EnvSecrets`) and exposed as module-level singletons `config`/`secrets`, imported directly (`from src.config import config`) rather than passed around. To point the agent at a different target repo, change the LLM model, or move the FAISS index, edit `config.yaml` — no code changes needed (LLM: `src/llm.py`; index: `config.vector_store.index_file`/`metadata_file`). `jira.auto_approve_risk_levels` drives the approval gate: only listed levels proceed without a human, and anything else — medium, high, or an unrecognised value — pauses (fail safe). One field is loaded but **not yet used by any code**: `jira.project_key` (the webhook does not filter by project).
 
 ### Observability (`src/observability.py`)
 LangFuse callback handler, attached to the LangGraph `config["callbacks"]` per-invocation in `_agent_config()` (`app.py`) when LangFuse keys are set in `.env`; `None` (no-op) otherwise. Every node run and LLM call is traced this way, including retries and interrupted/resumed runs.

@@ -1,0 +1,148 @@
+# Eval cases for the Jira coding agent.
+#
+# Each case sends one ticket through the real agent graph against a fresh copy of
+# evals/fixtures/react-app, then checks the outcome against `expect`.
+#
+# kind: behavior  -> a contract the system must always honour (expected pass rate: 100%).
+#                    Cheap to run, deterministic expectations.
+# kind: quality   -> "does it solve tickets well?" Statistical, many tickets, pass *rate*.
+#                    (None yet — added once a richer fixture exists.)
+#
+# Case fields
+#   ticket        summary + description sent to the agent
+#   setup         write_files: {path: content} added to the fixture (and committed) before the run
+#   env           no_node: true   -> run with npm missing from PATH (simulates a broken server)
+#   inject        llm_always_fails -> every model call raises Groq's tool_use_failed error
+#   resume        approved | rejected -> reply to send if the graph pauses for approval
+#   min_pass_rate fraction of repeats that must pass for the case to count (default 1.0)
+#
+# Checks (all optional) under `expect`
+#   paused_first          did the graph pause for human approval before writing anything?
+#   approval_status       final approval status ("approved" / "rejected")
+#   tests_passed          did the final test run pass?
+#   environment_failure   did the tester report "tests could not run at all"?
+#   retries_min/_max      number of self-heal (fixer) attempts used
+#   llm_calls_max         upper bound on model calls (0 = the model must never be reached)
+#   error                 "none" or the exception class the run must end with (e.g. LLMCallError)
+#   files_changed_include files that must be modified or created
+#   no_files_changed      the working tree must be untouched
+#   file_contains         {path: text} that must be present in the final file
+#   file_not_contains     {path: text} that must be absent from the final file
+
+- id: low_risk_text_change
+  kind: behavior
+  why: >
+    The happy path. A one-line text change is low risk, so it must go straight through
+    with no approval pause and pass its tests on the first try.
+  ticket:
+    summary: "Change the header link text from 'Learn React' to 'React Docs'"
+    description: "The anchor tag in the header reads 'Learn React'. It should read 'React Docs' instead."
+  expect:
+    paused_first: false
+    tests_passed: true
+    retries_max: 0
+    error: none
+    files_changed_include: [src/App.js]
+    file_contains:
+      src/App.js: "React Docs"
+
+- id: high_risk_pauses_then_approves
+  kind: behavior
+  why: >
+    Adding React state is risky, so the agent must pause BEFORE writing anything, and
+    only continue to a passing result after a human replies "approve".
+  ticket:
+    summary: "Add a click counter button to the header"
+    description: >
+      Add a button below the header link that shows "Clicked: N" and increments N each time
+      it is clicked. Use React state.
+  resume: approved
+  expect:
+    paused_first: true
+    approval_status: approved
+    tests_passed: true
+    error: none
+    files_changed_include: [src/App.js]
+    file_contains:
+      src/App.js: "useState"
+
+- id: high_risk_rejected_changes_nothing
+  kind: behavior
+  why: >
+    The same risky ticket, but the human replies "reject". The agent must stop cleanly
+    and leave the code exactly as it found it.
+  ticket:
+    summary: "Add a click counter button to the header"
+    description: >
+      Add a button below the header link that shows "Clicked: N" and increments N each time
+      it is clicked. Use React state.
+  resume: rejected
+  expect:
+    paused_first: true
+    approval_status: rejected
+    no_files_changed: true
+    error: none
+
+- id: forced_test_failure_self_heals
+  kind: behavior
+  why: >
+    Exercises the self-heal loop. A test the agent cannot see (inside a build/ folder, which
+    search skips) fails once the link text gets longer. The fixer must diagnose it from the
+    failure output, repair the right file, and must NOT "fix" it by shortening the text the
+    ticket asked for.
+  ticket:
+    summary: "Change the header link text to 'Learn React Docs from the official site'"
+    description: "The anchor tag in the header should read 'Learn React Docs from the official site'."
+  setup:
+    write_files:
+      src/build/linkLabel.test.js: |
+        import { render } from '@testing-library/react';
+        import App from '../App';
+
+        test('link label stays two words', () => {
+          const { container } = render(<App />);
+          const label = container.querySelector('a').textContent.trim();
+          expect(label.split(/\s+/)).toHaveLength(2);
+        });
+  expect:
+    paused_first: false
+    tests_passed: true
+    retries_min: 1
+    retries_max: 3
+    error: none
+    files_changed_include: [src/App.js, src/build/linkLabel.test.js]
+    file_contains:
+      src/App.js: "Learn React Docs from the official site"
+
+- id: environment_failure_skips_fixer
+  kind: behavior
+  why: >
+    If npm is missing, the tests cannot run at all. That is a server problem, not a code
+    problem, so the agent must say so and stop. It must not call the model to "fix" it
+    (only the parse and plan calls are allowed).
+  ticket:
+    summary: "Change the header link text from 'Learn React' to 'React Docs'"
+    description: "The anchor tag in the header reads 'Learn React'. It should read 'React Docs' instead."
+  env:
+    no_node: true
+  expect:
+    paused_first: false
+    environment_failure: true
+    tests_passed: false
+    retries_max: 0
+    llm_calls_max: 2
+    error: none
+
+- id: llm_failure_ends_cleanly
+  kind: behavior
+  why: >
+    If the model keeps returning malformed responses, the run must end with one clear,
+    short error (not a crash or a raw API dump) and must not have touched any code.
+  ticket:
+    summary: "Change the header link text from 'Learn React' to 'React Docs'"
+    description: "The anchor tag in the header reads 'Learn React'. It should read 'React Docs' instead."
+  inject: llm_always_fails
+  expect:
+    error: LLMCallError
+    llm_calls_max: 0
+    no_files_changed: true

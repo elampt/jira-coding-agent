@@ -123,6 +123,7 @@ flowchart TD
 | **Honest Failures** | Agent reports when it can't fix something instead of committing broken code |
 | **Fails Fast on Environment Problems** | If the tests can't run at all (e.g. `npm` missing), the agent says so on Jira instead of inventing "fixes" |
 | **Resilient LLM Calls** | Malformed model responses are retried; persistent failures surface as a short, readable Jira comment |
+| **Eval Harness** | `evals/` runs the real agent on fixed tickets (approval gate, self-heal, environment and model failures) and checks the outcome, with run history and regression flags |
 | **Clean PRs** | Only the agent's real edits + screenshots are committed (npm's lockfile churn is discarded); the PR body is a plain-English summary plus the file list |
 
 ## Tech Stack
@@ -246,6 +247,7 @@ jira-coding-agent/
 │   ├── llm.py                      # LLM factory (get_llm) + retrying structured-output helper
 │   └── observability.py            # LangFuse callback handler
 │
+├── evals/                          # Eval harness: pinned fixture app, cases.yaml, runner (see evals/README.md)
 ├── scripts/
 │   └── demo_local.py               # Run the agent graph locally — no Jira, ngrok, or GitHub needed
 │
@@ -432,6 +434,18 @@ python -m scripts.demo_local --summary "..." --description "..."
 python -m scripts.demo_local --resume approved      # continue a paused (high-risk) run
 ```
 
+### Evals
+
+`evals/` is a regression harness for the agent itself: it runs the real graph against fixed tickets on a pinned fixture app and checks each outcome against what the case promised.
+
+```bash
+make evals                          # every case once
+make evals ARGS="--repeat 3"        # repeat runs — model output varies
+.venv/bin/python -m evals.run --list
+```
+
+See [evals/README.md](evals/README.md) for the cases, how to read results, token cost, and how to add a case.
+
 ### Create a Test Ticket
 
 Create a Jira ticket and watch the agent work:
@@ -465,7 +479,7 @@ Within 2-3 minutes:
 |-----------|------------|
 | Open models struggle with complex refactors | Risk-based approval gate + self-heal loop; the model is set in `config.yaml` (a different provider needs one branch in `src/llm.py`) |
 | Only the Groq provider is implemented | `get_llm()` raises a clear error for anything else, rather than silently ignoring `llm.provider` |
-| `jira.auto_approve_risk_levels` in `config.yaml` is not wired up | The graph pauses for approval only on `high` risk; medium proceeds automatically |
+| `jira.project_key` in `config.yaml` is not used | The webhook does not filter by Jira project — any project pointed at the server triggers the agent |
 | Fixer context is budgeted (~4K tokens) | Prioritises files from the failure output, then edited files, then search results — suits Groq's free-tier token limits |
 | No npm install for new dependencies | Planner prompt restricts imports to existing packages |
 | Port 3000 collision on concurrent tickets | Sequential processing; dynamic ports for production |
